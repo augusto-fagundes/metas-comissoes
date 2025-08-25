@@ -1,8 +1,13 @@
 "use client";
 
-import type React from "react";
-import { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import React, { useState, useMemo } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,6 +19,14 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Table,
   TableBody,
@@ -38,17 +51,24 @@ import {
   Users,
   DollarSign,
   Upload,
+  ArrowUpDown,
+  FilterX,
+  ChevronDown,
 } from "lucide-react";
 import { useData } from "@/contexts/data-context";
 import { useAuth } from "@/contexts/auth-context";
 import { toast } from "@/hooks/use-toast";
-// ALTERAÇÃO 1: Importamos o novo componente de importação em tela
 import { ImportVendas } from "@/components/import-vendas";
+import { Venda } from "@/data/mock-data";
+
+type SortKey = keyof Venda | "colaboradorNome" | "comissao";
+type SortDirection = "ascending" | "descending";
 
 export function VendasPage() {
   const {
     vendas,
     colaboradores,
+    lojas,
     formasPagamento,
     addVenda,
     updateVenda,
@@ -57,11 +77,8 @@ export function VendasPage() {
   const { user, isAdmin } = useAuth();
 
   const [showAddVendaDialog, setShowAddVendaDialog] = useState(false);
-
-  // ALTERAÇÃO 2: Este estado controla a visibilidade da interface de importação
   const [showImportView, setShowImportView] = useState(false);
-
-  const [editingVenda, setEditingVenda] = useState<any>(null);
+  const [editingVenda, setEditingVenda] = useState<Venda | null>(null);
   const [formData, setFormData] = useState({
     colaboradorId: "",
     cliente: "",
@@ -69,6 +86,16 @@ export function VendasPage() {
     data: "",
     formaPagamento: "",
   });
+
+  // Estados para filtros e ordenação
+  const [filterLoja, setFilterLoja] = useState<string>("");
+  // ALTERAÇÃO: 'filterColaborador' agora é um array de strings (IDs)
+  const [filterColaborador, setFilterColaborador] = useState<string[]>([]);
+  const [filterFormaPagamento, setFilterFormaPagamento] = useState<string>("");
+  const [sortConfig, setSortConfig] = useState<{
+    key: SortKey;
+    direction: SortDirection;
+  } | null>({ key: "data", direction: "descending" });
 
   const resetForm = () => {
     setFormData({
@@ -108,7 +135,7 @@ export function VendasPage() {
     resetForm();
   };
 
-  const handleEdit = (venda: any) => {
+  const handleEdit = (venda: Venda) => {
     setEditingVenda(venda);
     setFormData({
       colaboradorId: venda.colaboradorId.toString(),
@@ -130,12 +157,11 @@ export function VendasPage() {
     }
   };
 
-  const getColaboradorNome = (id: number) =>
-    colaboradores.find((c) => c.id === id)?.nome || "N/A";
   const getFormaPagamentoPercentual = (codigo: string) =>
     formasPagamento.find((f) => f.codigo === codigo)?.percentualComissao || 0;
   const calcularComissao = (valor: number, formaPagamento: string) =>
     (valor * getFormaPagamentoPercentual(formaPagamento)) / 100;
+
   const getStatusBadge = (status: string) =>
     status === "confirmada" ? (
       <Badge className="bg-green-100 text-green-800">Confirmada</Badge>
@@ -143,27 +169,130 @@ export function VendasPage() {
       <Badge className="bg-yellow-100 text-yellow-800">Pendente</Badge>
     );
 
-  const vendasFiltradas = isAdmin()
-    ? vendas
-    : vendas.filter((v) => v.colaboradorId === user?.colaboradorId);
-  const totalVendas = vendasFiltradas.reduce((sum, v) => sum + v.valor, 0);
-  const totalComissoes = vendasFiltradas.reduce(
-    (sum, v) => sum + calcularComissao(v.valor, v.formaPagamento),
+  const colaboradoresFiltradosPorLoja = useMemo(() => {
+    if (!filterLoja) return colaboradores;
+    return colaboradores.filter((c) => c.lojaId === parseInt(filterLoja));
+  }, [filterLoja, colaboradores]);
+
+  const resetFilters = () => {
+    setFilterLoja("");
+    setFilterColaborador([]); // Reseta para um array vazio
+    setFilterFormaPagamento("");
+  };
+
+  const requestSort = (key: SortKey) => {
+    let direction: SortDirection = "ascending";
+    if (
+      sortConfig &&
+      sortConfig.key === key &&
+      sortConfig.direction === "ascending"
+    ) {
+      direction = "descending";
+    }
+    setSortConfig({ key, direction });
+  };
+
+  const sortedAndFilteredVendas = useMemo(() => {
+    let items: any[] = isAdmin()
+      ? vendas
+      : vendas.filter((v) => v.colaboradorId === user?.colaboradorId);
+
+    items = items.map((venda) => {
+      const colaborador = colaboradores.find(
+        (c) => c.id === venda.colaboradorId
+      );
+      return {
+        ...venda,
+        colaboradorNome: colaborador?.nome || "",
+        lojaId: colaborador?.lojaId,
+        comissao: calcularComissao(venda.valor, venda.formaPagamento),
+      };
+    });
+
+    if (filterLoja) {
+      items = items.filter((item) => item.lojaId === parseInt(filterLoja));
+    }
+    // ALTERAÇÃO: A lógica agora verifica se o ID está INCLUÍDO no array de filtros
+    if (filterColaborador.length > 0) {
+      items = items.filter((item) =>
+        filterColaborador.includes(item.colaboradorId.toString())
+      );
+    }
+    if (filterFormaPagamento) {
+      items = items.filter(
+        (item) => item.formaPagamento === filterFormaPagamento
+      );
+    }
+
+    if (sortConfig !== null) {
+      items.sort((a, b) => {
+        if (a[sortConfig.key] < b[sortConfig.key]) {
+          return sortConfig.direction === "ascending" ? -1 : 1;
+        }
+        if (a[sortConfig.key] > b[sortConfig.key]) {
+          return sortConfig.direction === "ascending" ? 1 : -1;
+        }
+        return 0;
+      });
+    }
+
+    return items;
+  }, [
+    vendas,
+    user,
+    isAdmin,
+    filterLoja,
+    filterColaborador,
+    filterFormaPagamento,
+    sortConfig,
+    colaboradores,
+  ]);
+
+  const totalVendas = sortedAndFilteredVendas.reduce(
+    (sum, v) => sum + v.valor,
+    0
+  );
+  const totalComissoes = sortedAndFilteredVendas.reduce(
+    (sum, v) => sum + v.comissao,
     0
   );
   const ticketMedio =
-    vendasFiltradas.length > 0 ? totalVendas / vendasFiltradas.length : 0;
+    sortedAndFilteredVendas.length > 0
+      ? totalVendas / sortedAndFilteredVendas.length
+      : 0;
+
+  const SortableHeader = ({
+    sortKey,
+    children,
+    className,
+  }: {
+    sortKey: SortKey;
+    children: React.ReactNode;
+    className?: string;
+  }) => (
+    <TableHead className={className}>
+      <Button
+        variant="ghost"
+        onClick={() => requestSort(sortKey)}
+        className="px-2"
+      >
+        {children}
+        <ArrowUpDown className="ml-2 h-4 w-4" />
+      </Button>
+    </TableHead>
+  );
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold">Vendas</h1>
-          <p className="text-gray-600">Gerencie todas as vendas realizadas</p>
+          <p className="text-gray-600">
+            Gerencie e analise todas as vendas realizadas
+          </p>
         </div>
         <div className="flex items-center gap-2">
           {isAdmin() && (
-            // ALTERAÇÃO 3: O botão agora alterna a visualização do componente de importação
             <Button
               variant="outline"
               onClick={() => setShowImportView(!showImportView)}
@@ -185,17 +314,18 @@ export function VendasPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Os Cards de estatísticas permanecem aqui, inalterados */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              Total de Vendas
+              Vendas Filtradas
             </CardTitle>
             <ShoppingCart className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{vendasFiltradas.length}</div>
-            <p className="text-xs text-muted-foreground">vendas registradas</p>
+            <div className="text-2xl font-bold">
+              {sortedAndFilteredVendas.length}
+            </div>
+            <p className="text-xs text-muted-foreground">vendas encontradas</p>
           </CardContent>
         </Card>
         <Card>
@@ -251,9 +381,101 @@ export function VendasPage() {
         </Card>
       </div>
 
-      {/* ALTERAÇÃO 4: Renderização condicional do componente de importação */}
       {showImportView && (
         <ImportVendas onClose={() => setShowImportView(false)} />
+      )}
+
+      {isAdmin() && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Filtros e Ordenação</CardTitle>
+            <CardDescription>
+              Refine sua busca para analisar os dados de vendas.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2">
+              <Label>Equipe:</Label>
+              <Select value={filterLoja} onValueChange={setFilterLoja}>
+                <SelectTrigger className="w-48">
+                  <SelectValue placeholder="Todas as Equipes" />
+                </SelectTrigger>
+                <SelectContent>
+                  {lojas.map((loja) => (
+                    <SelectItem key={loja.id} value={loja.id.toString()}>
+                      {loja.nome}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2">
+              <Label>Vendedor:</Label>
+              {/* NOVO COMPONENTE DE MULTI-SELEÇÃO */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="w-48 justify-between">
+                    {filterColaborador.length === 0 && "Todos os Vendedores"}
+                    {filterColaborador.length === 1 &&
+                      colaboradores.find(
+                        (c) => c.id.toString() === filterColaborador[0]
+                      )?.nome}
+                    {filterColaborador.length > 1 &&
+                      `${filterColaborador.length} vendedores selecionados`}
+                    <ChevronDown className="h-4 w-4 opacity-50" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="w-48">
+                  <DropdownMenuLabel>Vendedores da Equipe</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {colaboradoresFiltradosPorLoja.map((colaborador) => (
+                    <DropdownMenuCheckboxItem
+                      key={colaborador.id}
+                      checked={filterColaborador.includes(
+                        colaborador.id.toString()
+                      )}
+                      onCheckedChange={(checked) => {
+                        return checked
+                          ? setFilterColaborador([
+                              ...filterColaborador,
+                              colaborador.id.toString(),
+                            ])
+                          : setFilterColaborador(
+                              filterColaborador.filter(
+                                (id) => id !== colaborador.id.toString()
+                              )
+                            );
+                      }}
+                    >
+                      {colaborador.nome}
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+            <div className="flex items-center gap-2">
+              <Label>Pagamento:</Label>
+              <Select
+                value={filterFormaPagamento}
+                onValueChange={setFilterFormaPagamento}
+              >
+                <SelectTrigger className="w-48">
+                  <SelectValue placeholder="Todas as Formas" />
+                </SelectTrigger>
+                <SelectContent>
+                  {formasPagamento.map((f) => (
+                    <SelectItem key={f.id} value={f.codigo}>
+                      {f.nome}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button variant="ghost" onClick={resetFilters}>
+              <FilterX className="w-4 h-4 mr-2" /> Limpar Filtros
+            </Button>
+          </CardContent>
+        </Card>
       )}
 
       <Card>
@@ -264,26 +486,26 @@ export function VendasPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>ID</TableHead>
-                {isAdmin() && <TableHead>Colaborador</TableHead>}
+                <SortableHeader sortKey="id">ID</SortableHeader>
+                {isAdmin() && (
+                  <SortableHeader sortKey="colaboradorNome">
+                    Colaborador
+                  </SortableHeader>
+                )}
                 <TableHead>Cliente</TableHead>
-                <TableHead>Valor</TableHead>
-                <TableHead>Data</TableHead>
+                <SortableHeader sortKey="valor">Valor</SortableHeader>
+                <SortableHeader sortKey="data">Data</SortableHeader>
                 <TableHead>Pagamento</TableHead>
-                <TableHead>Comissão</TableHead>
+                <SortableHeader sortKey="comissao">Comissão</SortableHeader>
                 <TableHead>Status</TableHead>
-                <TableHead>Ações</TableHead>
+                <TableHead className="text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {vendasFiltradas.map((venda) => (
+              {sortedAndFilteredVendas.map((venda) => (
                 <TableRow key={venda.id}>
                   <TableCell className="font-medium">#{venda.id}</TableCell>
-                  {isAdmin() && (
-                    <TableCell>
-                      {getColaboradorNome(venda.colaboradorId)}
-                    </TableCell>
-                  )}
+                  {isAdmin() && <TableCell>{venda.colaboradorNome}</TableCell>}
                   <TableCell>{venda.cliente}</TableCell>
                   <TableCell>
                     R${" "}
@@ -292,34 +514,35 @@ export function VendasPage() {
                     })}
                   </TableCell>
                   <TableCell>
-                    {new Date(venda.data).toLocaleDateString("pt-BR", {
-                      timeZone: "UTC",
-                    })}
+                    {new Date(`${venda.data}T12:00:00`).toLocaleDateString(
+                      "pt-BR"
+                    )}
                   </TableCell>
                   <TableCell>{venda.formaPagamento}</TableCell>
                   <TableCell>
                     R${" "}
-                    {calcularComissao(
-                      venda.valor,
-                      venda.formaPagamento
-                    ).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                    {venda.comissao.toLocaleString("pt-BR", {
+                      minimumFractionDigits: 2,
+                    })}
                   </TableCell>
                   <TableCell>{getStatusBadge(venda.status)}</TableCell>
-                  <TableCell className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleEdit(venda)}
-                    >
-                      <Edit className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleDelete(venda.id)}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
+                  <TableCell className="text-right">
+                    <div className="flex gap-2 justify-end">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleEdit(venda)}
+                      >
+                        <Edit className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleDelete(venda.id)}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -329,7 +552,6 @@ export function VendasPage() {
       </Card>
 
       <Dialog open={showAddVendaDialog} onOpenChange={setShowAddVendaDialog}>
-        {/* O Dialog de Adicionar/Editar Venda permanece inalterado */}
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
@@ -434,8 +656,6 @@ export function VendasPage() {
           </form>
         </DialogContent>
       </Dialog>
-
-      {/* ALTERAÇÃO 5: O antigo ImportDialog foi removido daqui */}
     </div>
   );
 }

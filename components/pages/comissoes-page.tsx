@@ -13,12 +13,16 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+// CORREÇÃO: Adicionamos DialogTrigger à importação.
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
+  DialogClose,
+  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   Table,
@@ -28,7 +32,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { DollarSign, Check, X, Clock, Eye } from "lucide-react";
+import {
+  DollarSign,
+  Check,
+  X,
+  Clock,
+  Eye,
+  Archive,
+  Repeat,
+} from "lucide-react";
 import { useData } from "@/contexts/data-context";
 import { useAuth } from "@/contexts/auth-context";
 import { FilterBar } from "@/components/filter-bar";
@@ -38,7 +50,137 @@ import { Comissao } from "@/data/mock-data";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
-// O componente de fechamento foi movido para seu próprio arquivo, então o removemos daqui.
+const MonthClosingConfirmationDialog = ({ monthToClose, onConfirm }) => {
+  const { vendas, metas, colaboradores, formasPagamento } = useData();
+  const periodLabel = format(new Date(`${monthToClose}-15`), "MMMM 'de' yyyy", {
+    locale: ptBR,
+  });
+
+  const closingData = useMemo(() => {
+    const vendasDoPeriodo = vendas.filter((v) =>
+      v.data.startsWith(monthToClose)
+    );
+    const totalVendido = vendasDoPeriodo.reduce((sum, v) => sum + v.valor, 0);
+
+    const comissoesGeradas = colaboradores
+      .map((col) => {
+        const vendasColaborador = vendasDoPeriodo.filter(
+          (v) => v.colaboradorId === col.id
+        );
+        if (vendasColaborador.length === 0) return null;
+        const valorComissao = vendasColaborador.reduce((sum, venda) => {
+          const forma = formasPagamento.find(
+            (f) => f.codigo === venda.formaPagamento
+          );
+          return (
+            sum + (forma ? (venda.valor * forma.percentualComissao) / 100 : 0)
+          );
+        }, 0);
+        return { nome: col.nome, valor: valorComissao };
+      })
+      .filter((v) => v && v.valor > 0);
+
+    const totalComissoes = comissoesGeradas.reduce(
+      (sum, c) => sum + (c?.valor ?? 0),
+      0
+    );
+
+    const metasRecorrentes = metas.filter(
+      (m) =>
+        m.periodo === monthToClose &&
+        m.status === "ativa" &&
+        m.recorrente &&
+        m.tipo === "mensal"
+    );
+
+    return { totalVendido, comissoesGeradas, totalComissoes, metasRecorrentes };
+  }, [monthToClose, vendas, metas, colaboradores, formasPagamento]);
+
+  return (
+    <DialogContent className="max-w-2xl">
+      <DialogHeader>
+        <DialogTitle className="flex items-center gap-2">
+          <Archive className="w-6 h-6 text-amber-600" />
+          Confirmar Fechamento de Mês
+        </DialogTitle>
+        <DialogDescription>
+          Você está prestes a fechar o período de <strong>{periodLabel}</strong>
+          . Esta ação é irreversível e irá gerar as comissões pendentes e
+          renovar as metas recorrentes.
+        </DialogDescription>
+      </DialogHeader>
+      <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto pr-2">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Resumo do Mês</CardTitle>
+          </CardHeader>
+          <CardContent className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <p className="text-sm text-muted-foreground">Total Vendido</p>
+              <p className="text-2xl font-bold text-green-600">
+                R${" "}
+                {closingData.totalVendido.toLocaleString("pt-BR", {
+                  minimumFractionDigits: 2,
+                })}
+              </p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-sm text-muted-foreground">
+                Total de Comissões a Gerar
+              </p>
+              <p className="text-2xl font-bold text-blue-600">
+                R${" "}
+                {closingData.totalComissoes.toLocaleString("pt-BR", {
+                  minimumFractionDigits: 2,
+                })}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
+        {closingData.metasRecorrentes.length > 0 && (
+          <div>
+            <Label className="text-sm font-medium flex items-center gap-2">
+              <Repeat className="w-4 h-4" />
+              Metas Recorrentes a Renovar
+            </Label>
+            <Table className="mt-2">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Colaborador</TableHead>
+                  <TableHead>Descrição</TableHead>
+                  <TableHead className="text-right">Valor</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {closingData.metasRecorrentes.map((meta) => (
+                  <TableRow key={meta.id}>
+                    <TableCell>
+                      {
+                        colaboradores.find((c) => c.id === meta.colaboradorId)
+                          ?.nome
+                      }
+                    </TableCell>
+                    <TableCell>{meta.descricao}</TableCell>
+                    <TableCell className="text-right">
+                      R$ {meta.valorMeta.toLocaleString()}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </div>
+      <DialogFooter>
+        <DialogClose asChild>
+          <Button variant="outline">Cancelar</Button>
+        </DialogClose>
+        <Button onClick={onConfirm}>Confirmar e Fechar Mês</Button>
+      </DialogFooter>
+    </DialogContent>
+  );
+};
 
 export function ComissoesPage() {
   const {
@@ -50,15 +192,33 @@ export function ComissoesPage() {
     rejeitarComissao,
     marcarComissaoPaga,
   } = useData();
-  const { getPeriodLabel, selectedPeriod, filterMode, simulationDate } =
-    usePeriodFilter();
-  const { user } = useAuth();
+  const {
+    getPeriodLabel,
+    getPreviousMonthPeriod,
+    selectedPeriod,
+    filterMode,
+    simulationDate,
+    setFilterMode,
+    setSelectedPeriod,
+  } = usePeriodFilter();
+  const { user, isAdmin } = useAuth();
 
+  const [showClosingModal, setShowClosingModal] = useState(false);
   const [showApprovalModal, setShowApprovalModal] = useState(false);
   const [modalData, setModalData] = useState<any>(null);
   const [observacoes, setObservacoes] = useState("");
 
   const comissoesVendas = getComissoesBaseadasEmVendas();
+
+  const monthToClose = useMemo(() => {
+    const prevMonth = getPreviousMonthPeriod();
+    if (!prevMonth) return null;
+    const hasSalesInPrevMonth = vendas.some((v) =>
+      v.data.startsWith(prevMonth)
+    );
+    const isClosed = comissoes.some((c) => c.periodo === prevMonth);
+    return hasSalesInPrevMonth && !isClosed ? prevMonth : null;
+  }, [vendas, comissoes, getPreviousMonthPeriod]);
 
   const allComissionsData = useMemo(() => {
     const periodToFilter =
@@ -112,6 +272,15 @@ export function ComissoesPage() {
     simulationDate,
     vendas,
   ]);
+
+  const handleConfirmClosing = () => {
+    const { fecharMes } = useData();
+    const previousMonthPeriod = getPreviousMonthPeriod();
+    fecharMes();
+    setFilterMode("period");
+    setSelectedPeriod(previousMonthPeriod);
+    setShowClosingModal(false);
+  };
 
   const handleOpenModal = (data: any) => {
     setModalData(data);
@@ -195,7 +364,34 @@ export function ComissoesPage() {
         </div>
       </div>
 
-      {/* O card e a lógica de fechamento foram movidos para a FilterBar */}
+      {isAdmin() && monthToClose && (
+        <Dialog open={showClosingModal} onOpenChange={setShowClosingModal}>
+          <DialogTrigger asChild>
+            <Card className="bg-amber-50 border-amber-200 hover:bg-amber-100 cursor-pointer transition-colors">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-amber-900">
+                  <Archive className="w-5 h-5" />
+                  Fechamento de Mês Disponível
+                </CardTitle>
+                <CardDescription className="text-amber-800">
+                  Clique aqui para revisar e gerar o fechamento do período de{" "}
+                  <strong>
+                    {format(new Date(`${monthToClose}-15`), "MMMM 'de' yyyy", {
+                      locale: ptBR,
+                    })}
+                  </strong>
+                  .
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          </DialogTrigger>
+          <MonthClosingConfirmationDialog
+            monthToClose={monthToClose}
+            onConfirm={handleConfirmClosing}
+          />
+        </Dialog>
+      )}
+
       <FilterBar />
 
       <Card>
