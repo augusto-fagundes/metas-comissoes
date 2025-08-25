@@ -45,15 +45,17 @@ function AppContent() {
   };
 
   return (
-    <DataProvider>
-      <PeriodFilterProvider>
+    // CORREÇÃO: Invertemos a ordem dos Providers.
+    // Agora o DataProvider está dentro do PeriodFilterProvider.
+    <PeriodFilterProvider>
+      <DataProvider>
         <div className="flex h-screen bg-gray-50">
           <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
           <main className="flex-1 overflow-auto p-6">{renderContent()}</main>
           <Toaster />
         </div>
-      </PeriodFilterProvider>
-    </DataProvider>
+      </DataProvider>
+    </PeriodFilterProvider>
   );
 }
 

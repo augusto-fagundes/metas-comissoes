@@ -1,66 +1,115 @@
-"use client"
+"use client";
 
-import { createContext, useContext, useState, type ReactNode } from "react"
+import { createContext, useContext, useState, type ReactNode } from "react";
+import { DateRange } from "react-day-picker";
+import { format, subMonths, startOfMonth } from "date-fns";
+import { ptBR } from "date-fns/locale";
+
+type FilterMode = "live" | "range" | "period";
 
 interface PeriodFilterContextType {
-  selectedPeriod: string
-  setSelectedPeriod: (period: string) => void
-  customStartDate: string
-  setCustomStartDate: (date: string) => void
-  customEndDate: string
-  setCustomEndDate: (date: string) => void
-  isDateInSelectedPeriod: (date: string) => boolean
-  getSelectedPeriodLabel: () => string
-  clearFilters: () => void
+  // Data simulada que controla todo o sistema
+  simulationDate: Date;
+  setSimulationDate: (date: Date) => void;
+
+  // Controles de filtro
+  filterMode: FilterMode;
+  setFilterMode: (mode: FilterMode) => void;
+  selectedPeriod: string;
+  setSelectedPeriod: (period: string) => void;
+  dateRange: DateRange | undefined;
+  setDateRange: (range: DateRange | undefined) => void;
+
+  // Funções utilitárias
+  isDateInPeriod: (date: string) => boolean;
+  getPeriodLabel: () => string;
+  getPreviousMonthPeriod: () => string;
 }
 
-const PeriodFilterContext = createContext<PeriodFilterContextType | undefined>(undefined)
+const PeriodFilterContext = createContext<PeriodFilterContextType | undefined>(
+  undefined
+);
 
 export function PeriodFilterProvider({ children }: { children: ReactNode }) {
-  const [selectedPeriod, setSelectedPeriod] = useState("2024-01")
-  const [customStartDate, setCustomStartDate] = useState("")
-  const [customEndDate, setCustomEndDate] = useState("")
+  const [simulationDate, setSimulationDate] = useState(
+    new Date("2024-01-15T12:00:00")
+  );
+  const [filterMode, setFilterMode] = useState<FilterMode>("live");
+  const [selectedPeriod, setSelectedPeriod] = useState("2024-01");
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
 
-  const isDateInSelectedPeriod = (date: string): boolean => {
-    // Para este exemplo, sempre retorna true para mostrar todas as vendas
-    return true
-  }
+  const getLivePeriod = () => format(simulationDate, "yyyy-MM");
 
-  const getSelectedPeriodLabel = (): string => {
-    const [year, month] = selectedPeriod.split("-")
-    const date = new Date(Number.parseInt(year), Number.parseInt(month) - 1)
-    return date.toLocaleDateString("pt-BR", { month: "long", year: "numeric" })
-  }
+  const isDateInPeriod = (dateStr: string): boolean => {
+    if (!dateStr) return false;
+    const currentPeriod =
+      filterMode === "live" ? getLivePeriod() : selectedPeriod;
+    const date = new Date(`${dateStr}T12:00:00`);
 
-  const clearFilters = () => {
-    setSelectedPeriod("2024-01")
-    setCustomStartDate("")
-    setCustomEndDate("")
-  }
+    if (filterMode === "live" || filterMode === "period") {
+      return dateStr.startsWith(currentPeriod);
+    }
+    if (filterMode === "range" && dateRange?.from) {
+      const from = startOfMonth(dateRange.from);
+      const to = dateRange.to ?? from;
+      return date >= from && date <= to;
+    }
+    return false;
+  };
+
+  const getPeriodLabel = (): string => {
+    const currentPeriod =
+      filterMode === "live" ? getLivePeriod() : selectedPeriod;
+    if (filterMode === "live" || filterMode === "period") {
+      const [year, month] = currentPeriod.split("-");
+      const date = new Date(Number(year), Number(month) - 1);
+      const label = date.toLocaleDateString("pt-BR", {
+        month: "long",
+        year: "numeric",
+      });
+      return `de ${label.charAt(0).toUpperCase() + label.slice(1)}`;
+    }
+    if (filterMode === "range" && dateRange?.from) {
+      return `de ${format(dateRange.from, "dd/MM/y")} à ${format(
+        dateRange.to ?? dateRange.from,
+        "dd/MM/y"
+      )}`;
+    }
+    return "sem período selecionado";
+  };
+
+  const getPreviousMonthPeriod = () => {
+    const previousMonth = subMonths(simulationDate, 1);
+    return format(previousMonth, "yyyy-MM");
+  };
 
   return (
     <PeriodFilterContext.Provider
       value={{
+        simulationDate,
+        setSimulationDate,
+        filterMode,
+        setFilterMode,
         selectedPeriod,
         setSelectedPeriod,
-        customStartDate,
-        setCustomStartDate,
-        customEndDate,
-        setCustomEndDate,
-        isDateInSelectedPeriod,
-        getSelectedPeriodLabel,
-        clearFilters,
+        dateRange,
+        setDateRange,
+        isDateInPeriod,
+        getPeriodLabel,
+        getPreviousMonthPeriod,
       }}
     >
       {children}
     </PeriodFilterContext.Provider>
-  )
+  );
 }
 
 export function usePeriodFilter() {
-  const context = useContext(PeriodFilterContext)
+  const context = useContext(PeriodFilterContext);
   if (context === undefined) {
-    throw new Error("usePeriodFilter must be used within a PeriodFilterProvider")
+    throw new Error(
+      "usePeriodFilter must be used within a PeriodFilterProvider"
+    );
   }
-  return context
+  return context;
 }

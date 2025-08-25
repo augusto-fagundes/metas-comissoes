@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState, useMemo } from "react";
 import {
   Card,
   CardContent,
@@ -28,77 +28,140 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-} from "recharts";
-import {
-  DollarSign,
-  CreditCard,
-  Percent,
-  Check,
-  X,
-  Clock,
-  Eye,
-  ShoppingCart,
-  TrendingUp,
-} from "lucide-react";
+import { DollarSign, Check, X, Clock, Eye, Archive } from "lucide-react";
 import { useData } from "@/contexts/data-context";
 import { useAuth } from "@/contexts/auth-context";
 import { FilterBar } from "@/components/filter-bar";
 import { usePeriodFilter } from "@/contexts/period-filter-context";
 import { toast } from "@/hooks/use-toast";
+import { Comissao } from "@/data/mock-data";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
+
+/**
+ * Card que aparece condicionalmente para permitir o fechamento do mês.
+ */
+const MonthClosingCard = () => {
+  const { fecharMes } = useData();
+  const { getPreviousMonthPeriod } = usePeriodFilter();
+
+  const handleCloseMonth = () => {
+    fecharMes();
+  };
+
+  const previousMonthLabel = format(
+    new Date(`${getPreviousMonthPeriod()}-02`),
+    "MMMM 'de' yyyy",
+    { locale: ptBR }
+  );
+
+  return (
+    <Card className="bg-amber-50 border-amber-200">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-amber-900">
+          <Archive className="w-5 h-5" />
+          Fechamento de Mês Disponível
+        </CardTitle>
+        <CardDescription className="text-amber-800">
+          Existem vendas no período de <strong>{previousMonthLabel}</strong> que
+          ainda não foram processadas. Gere o fechamento para calcular as
+          comissões e enviá-las para aprovação.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Button onClick={handleCloseMonth}>Gerar Fechamento de Mês</Button>
+      </CardContent>
+    </Card>
+  );
+};
 
 export function ComissoesPage() {
   const {
     getComissoesBaseadasEmVendas,
-    formasPagamento,
     comissoes,
+    vendas,
     colaboradores,
-    usuarios,
     aprovarComissao,
     rejeitarComissao,
     marcarComissaoPaga,
+    fecharMes,
   } = useData();
-  const { getSelectedPeriodLabel } = usePeriodFilter();
+  const {
+    getPeriodLabel,
+    getPreviousMonthPeriod,
+    selectedPeriod,
+    filterMode,
+    simulationDate,
+  } = usePeriodFilter();
   const { user } = useAuth();
 
   const [showApprovalModal, setShowApprovalModal] = useState(false);
-  const [showDetailsModal, setShowDetailsModal] = useState(false);
-  const [selectedComissao, setSelectedComissao] = useState(null);
-  const [selectedColaborador, setSelectedColaborador] = useState(null);
+  const [selectedComissao, setSelectedComissao] = useState<Comissao | null>(
+    null
+  );
   const [observacoes, setObservacoes] = useState("");
 
   const comissoesVendas = getComissoesBaseadasEmVendas();
-  const periodLabel = getSelectedPeriodLabel();
 
-  // Dados para o gráfico de barras (comissões por colaborador)
-  const chartDataColaboradores = comissoesVendas.vendasPorColaborador.map(
-    (col) => ({
-      nome: col.colaborador.nome.split(" ")[0],
-      comissao: col.totalComissao,
-      vendas: col.totalVendas,
-    })
-  );
+  // Lógica para exibir o card de fechamento
+  const monthToClose = useMemo(() => {
+    const prevMonth = getPreviousMonthPeriod();
+    const hasSalesInPrevMonth = vendas.some((v) =>
+      v.data.startsWith(prevMonth)
+    );
+    const isClosed = comissoes.some((c) => c.periodo === prevMonth);
+    return hasSalesInPrevMonth && !isClosed ? prevMonth : null;
+  }, [vendas, comissoes, getPreviousMonthPeriod]);
 
-  // Dados para o gráfico de pizza (comissões por forma de pagamento)
-  const chartDataFormas = comissoesVendas.resumoPorForma.map(
-    (forma, index) => ({
-      name: forma.formaPagamento,
-      value: forma.comissao,
-      color: ["#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6"][index % 5],
-    })
-  );
+  // CORREÇÃO: Lógica ajustada para filtrar corretamente os dados por período
+  const allComissionsData = useMemo(() => {
+    const periodToFilter =
+      filterMode === "live"
+        ? format(simulationDate, "yyyy-MM")
+        : selectedPeriod;
 
-  const COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6"];
+    // 1. Pega as comissões já processadas (Pendente, Aprovada, etc) APENAS do período selecionado
+    const processedInPeriod = comissoes
+      .filter((c) => c.periodo === periodToFilter)
+      .map((c) => ({
+        ...c,
+        colaborador: colaboradores.find((col) => col.id === c.colaboradorId),
+        isProcessed: true,
+        // Adiciona campos que faltam para a tabela funcionar
+        quantidadeVendas: c.detalhes.length, // Aproximação, pode ser melhorada
+        totalVendido: c.detalhes.reduce((sum, d) => sum + d.valor, 0),
+      }));
+
+    // 2. Pega as comissões "Não Processadas" (cálculo em tempo real) do período selecionado
+    const notProcessedInPeriod = comissoesVendas.vendasPorColaborador
+      // Garante que não vamos mostrar um colaborador que já tem uma comissão processada neste mesmo período
+      .filter(
+        (v) =>
+          !processedInPeriod.some((p) => p.colaboradorId === v.colaborador.id)
+      )
+      .map((v) => ({
+        id: `np-${v.colaborador.id}-${periodToFilter}`,
+        colaboradorId: v.colaborador.id,
+        colaborador: v.colaborador,
+        periodo: periodToFilter,
+        valorComissao: v.totalComissao,
+        quantidadeVendas: v.quantidadeVendas,
+        totalVendido: v.totalVendas,
+        status: "nao_processada",
+        isProcessed: false,
+        detalhes: [], // Não temos detalhes profundos para comissões não processadas
+      }));
+
+    // 3. Retorna a combinação dos dois, agora corretamente filtrada
+    return [...processedInPeriod, ...notProcessedInPeriod];
+  }, [
+    comissoes,
+    comissoesVendas,
+    colaboradores,
+    selectedPeriod,
+    filterMode,
+    simulationDate,
+  ]);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -130,74 +193,46 @@ export function ComissoesPage() {
             Paga
           </Badge>
         );
+      case "nao_processada":
+        return <Badge variant="outline">Não Processada</Badge>;
       default:
-        return <Badge variant="outline">{status}</Badge>;
+        return <Badge variant="secondary">{status}</Badge>;
     }
   };
 
-  const getColaboradorNome = (colaboradorId: number) => {
-    const colaborador = colaboradores.find((c) => c.id === colaboradorId);
-    return colaborador?.nome || "Colaborador não encontrado";
+  const handleReview = (comissao: Comissao) => {
+    setSelectedComissao(comissao);
+    setObservacoes(comissao.observacoes || "");
+    setShowApprovalModal(true);
   };
 
-  const getUsuarioNome = (usuarioId?: number) => {
-    if (!usuarioId) return "N/A";
-    const usuario = usuarios.find((u) => u.id === usuarioId);
-    return usuario?.nome || "Usuário não encontrado";
-  };
-
-  const handleAprovar = () => {
+  const handleApprove = () => {
     if (selectedComissao) {
-      aprovarComissao(selectedComissao.id, user?.id || 1, observacoes);
+      aprovarComissao(selectedComissao.id, user!.id, observacoes);
+      toast({ title: "Comissão aprovada!" });
       setShowApprovalModal(false);
-      setSelectedComissao(null);
-      setObservacoes("");
-
-      toast({
-        title: "Comissão aprovada!",
-        description: "A comissão foi aprovada com sucesso.",
-      });
     }
   };
 
-  const handleRejeitar = () => {
-    if (selectedComissao && observacoes.trim()) {
-      rejeitarComissao(selectedComissao.id, user?.id || 1, observacoes);
+  const handleReject = () => {
+    if (selectedComissao) {
+      if (!observacoes.trim()) {
+        toast({
+          title: "Observação é obrigatória para rejeitar.",
+          variant: "destructive",
+        });
+        return;
+      }
+      rejeitarComissao(selectedComissao.id, user!.id, observacoes);
+      toast({ title: "Comissão rejeitada!" });
       setShowApprovalModal(false);
-      setSelectedComissao(null);
-      setObservacoes("");
-
-      toast({
-        title: "Comissão rejeitada!",
-        description: "A comissão foi rejeitada.",
-      });
-    } else {
-      toast({
-        title: "Observação obrigatória",
-        description:
-          "Para rejeitar uma comissão, é necessário informar o motivo.",
-        variant: "destructive",
-      });
     }
   };
 
-  const handleMarcarPaga = (comissaoId: number) => {
+  const handleMarkAsPaid = (comissaoId: number) => {
     marcarComissaoPaga(comissaoId);
-
-    toast({
-      title: "Comissão marcada como paga!",
-      description: "A comissão foi marcada como paga.",
-    });
+    toast({ title: "Comissão marcada como paga!" });
   };
-
-  const handleVerDetalhes = (colaboradorData) => {
-    setSelectedColaborador(colaboradorData);
-    setShowDetailsModal(true);
-  };
-
-  const comissoesPendentes = comissoes.filter((c) => c.status === "pendente");
-  const comissoesAprovadas = comissoes.filter((c) => c.status === "aprovada");
-  const comissoesPagas = comissoes.filter((c) => c.status === "paga");
 
   return (
     <div className="space-y-6">
@@ -205,178 +240,20 @@ export function ComissoesPage() {
         <div>
           <h1 className="text-3xl font-bold">Comissões</h1>
           <p className="text-gray-600">
-            Sistema de aprovação baseado em vendas e formas de pagamento
+            Acompanhe, aprove e gerencie as comissões da equipe.
           </p>
         </div>
       </div>
 
+      {user?.tipo === "admin" && monthToClose && <MonthClosingCard />}
+
       <FilterBar />
 
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-        <h2 className="text-lg font-medium text-blue-800 mb-1">
-          Período: {periodLabel}
-        </h2>
-        <p className="text-sm text-blue-600">
-          As comissões são calculadas automaticamente com base no percentual de
-          cada forma de pagamento sobre o valor das vendas realizadas.
-        </p>
-      </div>
-
-      {/* Cards de Resumo */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Total de Comissões
-            </CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">
-              R$ {comissoesVendas.totalGeralComissoes.toLocaleString()}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Baseado nas vendas do período
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Vendedores Ativos
-            </CardTitle>
-            <TrendingUp className="h-4 w-4 text-blue-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-blue-600">
-              {comissoesVendas.vendasPorColaborador.length}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Com vendas no período
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Pendentes</CardTitle>
-            <Clock className="h-4 w-4 text-yellow-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-yellow-600">
-              {comissoesPendentes.length}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Aguardando aprovação
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Aprovadas</CardTitle>
-            <Check className="h-4 w-4 text-green-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">
-              {comissoesAprovadas.length}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Prontas para pagamento
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Gráficos */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Comissões por Colaborador</CardTitle>
-            <CardDescription>
-              Valor total de comissões baseado nas vendas do período
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={chartDataColaboradores}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="nome" />
-                <YAxis />
-                <Tooltip
-                  formatter={(value) => `R$ ${value.toLocaleString()}`}
-                />
-                <Bar dataKey="comissao" fill="#10b981" name="Comissão" />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Comissões por Forma de Pagamento</CardTitle>
-            <CardDescription>
-              Distribuição das comissões por forma de pagamento
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={chartDataFormas}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={120}
-                  paddingAngle={5}
-                  dataKey="value"
-                >
-                  {chartDataFormas.map((entry, index) => (
-                    <Cell
-                      key={`cell-${index}`}
-                      fill={COLORS[index % COLORS.length]}
-                    />
-                  ))}
-                </Pie>
-                <Tooltip
-                  formatter={(value) => `R$ ${value.toLocaleString()}`}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="mt-4 space-y-2">
-              {chartDataFormas.map((entry, index) => (
-                <div
-                  key={entry.name}
-                  className="flex items-center justify-between text-sm"
-                >
-                  <div className="flex items-center gap-2">
-                    <div
-                      className="w-3 h-3 rounded-full"
-                      style={{ backgroundColor: COLORS[index % COLORS.length] }}
-                    />
-                    <span>{entry.name}</span>
-                  </div>
-                  <span className="font-medium">
-                    R$ {entry.value.toLocaleString()}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Sistema de Aprovação de Comissões Baseado em Vendas */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Check className="w-5 h-5" />
-            Sistema de Aprovação de Comissões
-          </CardTitle>
+          <CardTitle>Sistema de Aprovação de Comissões</CardTitle>
           <CardDescription>
-            Todos os vendedores com vendas no período aparecem automaticamente
-            para aprovação de comissões
+            Visão geral das comissões {getPeriodLabel()}.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -384,443 +261,202 @@ export function ComissoesPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Colaborador</TableHead>
-                <TableHead>Qtd. Vendas</TableHead>
+                <TableHead>Período</TableHead>
                 <TableHead>Total Vendido</TableHead>
                 <TableHead>Valor da Comissão</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Ações</TableHead>
+                <TableHead className="text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {comissoesVendas.vendasPorColaborador.map((colaboradorData) => {
-                // Verificar se existe comissão registrada para este colaborador
-                const comissaoExistente = comissoes.find(
-                  (c) => c.colaboradorId === colaboradorData.colaborador.id
-                );
-
-                return (
-                  <TableRow key={colaboradorData.colaborador.id}>
+              {allComissionsData.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="h-24 text-center">
+                    Nenhuma comissão encontrada para este período.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                allComissionsData.map((item) => (
+                  <TableRow key={item.id}>
                     <TableCell>
-                      <div className="flex items-center space-x-3">
+                      <div className="flex items-center gap-3">
                         <Avatar className="h-8 w-8">
-                          <AvatarImage src="/placeholder.svg" />
+                          <AvatarImage src={item.colaborador?.foto} />
                           <AvatarFallback>
-                            {colaboradorData.colaborador.nome
+                            {item.colaborador?.nome
                               .split(" ")
                               .map((n) => n[0])
                               .join("")}
                           </AvatarFallback>
                         </Avatar>
-                        <div>
-                          <span className="font-medium">
-                            {colaboradorData.colaborador.nome}
-                          </span>
-                          <p className="text-xs text-gray-500">
-                            {colaboradorData.colaborador.equipe}
-                          </p>
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <ShoppingCart className="w-4 h-4 text-blue-500" />
                         <span className="font-medium">
-                          {colaboradorData.quantidadeVendas}
+                          {item.colaborador?.nome}
                         </span>
                       </div>
                     </TableCell>
+                    <TableCell>{item.periodo}</TableCell>
                     <TableCell>
-                      <span className="font-medium">
-                        R$ {colaboradorData.totalVendas.toLocaleString()}
-                      </span>
+                      R${" "}
+                      {item.totalVendido?.toLocaleString("pt-BR", {
+                        minimumFractionDigits: 2,
+                      }) ?? "N/A"}
                     </TableCell>
-                    <TableCell>
-                      <span className="font-medium text-green-600">
-                        R$ {colaboradorData.totalComissao.toLocaleString()}
-                      </span>
+                    <TableCell className="font-medium text-green-600">
+                      R${" "}
+                      {item.valorComissao.toLocaleString("pt-BR", {
+                        minimumFractionDigits: 2,
+                      })}
                     </TableCell>
-                    <TableCell>
-                      {comissaoExistente ? (
-                        getStatusBadge(comissaoExistente.status)
-                      ) : (
-                        <Badge variant="outline" className="bg-gray-100">
-                          Não processada
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex space-x-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleVerDetalhes(colaboradorData)}
-                        >
-                          <Eye className="w-4 h-4 mr-1" />
-                          Detalhes
-                        </Button>
-                        {comissaoExistente?.status === "pendente" && (
+                    <TableCell>{getStatusBadge(item.status)}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex space-x-2 justify-end">
+                        {item.status === "pendente" &&
+                          user?.tipo === "admin" && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleReview(item as Comissao)}
+                            >
+                              Revisar
+                            </Button>
+                          )}
+                        {item.status === "aprovada" &&
+                          user?.tipo === "admin" && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() =>
+                                handleMarkAsPaid(item.id as number)
+                              }
+                            >
+                              Marcar como Paga
+                            </Button>
+                          )}
+                        {item.isProcessed && (
                           <Button
-                            variant="outline"
+                            variant="ghost"
                             size="sm"
-                            onClick={() => {
-                              setSelectedComissao(comissaoExistente);
-                              setShowApprovalModal(true);
-                            }}
+                            onClick={() => handleReview(item as Comissao)}
                           >
-                            Revisar
-                          </Button>
-                        )}
-                        {comissaoExistente?.status === "aprovada" && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() =>
-                              handleMarcarPaga(comissaoExistente.id)
-                            }
-                          >
-                            Marcar como Paga
+                            Detalhes
                           </Button>
                         )}
                       </div>
                     </TableCell>
                   </TableRow>
-                );
-              })}
+                ))
+              )}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
 
-      {/* Resumo por Forma de Pagamento */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <CreditCard className="w-5 h-5" />
-            Resumo por Forma de Pagamento
-          </CardTitle>
-          <CardDescription>
-            Detalhamento das comissões por forma de pagamento no período
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Forma de Pagamento</TableHead>
-                <TableHead>Percentual</TableHead>
-                <TableHead>Quantidade de Vendas</TableHead>
-                <TableHead>Total de Vendas</TableHead>
-                <TableHead>Total de Comissões</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {comissoesVendas.resumoPorForma.map((forma) => (
-                <TableRow key={forma.codigo}>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline">{forma.codigo}</Badge>
-                      <span className="font-medium">
-                        {forma.formaPagamento}
-                      </span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1">
-                      <Percent className="w-4 h-4 text-green-600" />
-                      <span className="font-medium text-green-600">
-                        {forma.percentualComissao}%
-                      </span>
-                      <span className="text-sm text-gray-500">
-                        sobre cada venda
-                      </span>
-                    </div>
-                  </TableCell>
-                  <TableCell>{forma.quantidadeVendas}</TableCell>
-                  <TableCell>R$ {forma.totalVendas.toLocaleString()}</TableCell>
-                  <TableCell>
-                    <span className="font-medium text-green-600">
-                      R$ {forma.comissao.toLocaleString()}
-                    </span>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      {/* Modal de Detalhes do Colaborador */}
-      {selectedColaborador && (
-        <Dialog open={showDetailsModal} onOpenChange={setShowDetailsModal}>
-          <DialogContent className="max-w-6xl">
-            <DialogHeader>
-              <DialogTitle>Detalhes das Vendas e Comissões</DialogTitle>
-              <DialogDescription>
-                Resumo completo das vendas de{" "}
-                {selectedColaborador.colaborador.nome}
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="space-y-6">
-              {/* Resumo Geral */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">Total de Vendas</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">
-                      {selectedColaborador.quantidadeVendas}
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">Valor Total</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold text-green-600">
-                      R$ {selectedColaborador.totalVendas.toLocaleString()}
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">Comissão Total</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold text-blue-600">
-                      R$ {selectedColaborador.totalComissao.toLocaleString()}
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">Ticket Médio</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">
-                      R${" "}
-                      {(
-                        selectedColaborador.totalVendas /
-                        selectedColaborador.quantidadeVendas
-                      ).toLocaleString()}
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Detalhes por Forma de Pagamento */}
-              <div>
-                <h3 className="text-lg font-semibold mb-4">
-                  Detalhamento por Forma de Pagamento
-                </h3>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Forma de Pagamento</TableHead>
-                      <TableHead>Qtd. Vendas</TableHead>
-                      <TableHead>Total Vendido</TableHead>
-                      <TableHead>% Comissão</TableHead>
-                      <TableHead>Comissão</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {selectedColaborador.detalhesFormasPagamento.map(
-                      (detalhe, index) => (
-                        <TableRow key={index}>
-                          <TableCell>
-                            <Badge variant="outline">
-                              {detalhe.formaPagamento}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>{detalhe.quantidadeVendas}</TableCell>
-                          <TableCell>
-                            R$ {detalhe.totalVendas.toLocaleString()}
-                          </TableCell>
-                          <TableCell>{detalhe.percentualComissao}%</TableCell>
-                          <TableCell className="font-medium text-green-600">
-                            R$ {detalhe.comissao.toLocaleString()}
-                          </TableCell>
-                        </TableRow>
-                      )
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-
-              {/* Lista de Vendas */}
-              <div>
-                <h3 className="text-lg font-semibold mb-4">Lista de Vendas</h3>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>ID</TableHead>
-                      <TableHead>Cliente</TableHead>
-                      <TableHead>Valor</TableHead>
-                      <TableHead>Data</TableHead>
-                      <TableHead>Forma Pagamento</TableHead>
-                      <TableHead>Comissão</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {selectedColaborador.vendas.map((venda) => {
-                      const forma = formasPagamento.find(
-                        (f) => f.codigo === venda.formaPagamento
-                      );
-                      const comissao =
-                        (venda.valor * (forma?.percentualComissao || 0)) / 100;
-
-                      return (
-                        <TableRow key={venda.id}>
-                          <TableCell>#{venda.id}</TableCell>
-                          <TableCell>{venda.cliente}</TableCell>
-                          <TableCell>
-                            R$ {venda.valor.toLocaleString()}
-                          </TableCell>
-                          <TableCell>
-                            {new Date(venda.data).toLocaleDateString("pt-BR")}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline">
-                              {forma?.nome || venda.formaPagamento}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="font-medium text-green-600">
-                            R$ {comissao.toLocaleString()}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            </div>
-
-            <div className="flex justify-end mt-6">
-              <Button
-                variant="outline"
-                onClick={() => setShowDetailsModal(false)}
-              >
-                Fechar
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
-
-      {/* Modal de Aprovação */}
       {selectedComissao && (
         <Dialog open={showApprovalModal} onOpenChange={setShowApprovalModal}>
-          <DialogContent className="max-w-4xl">
+          <DialogContent>
             <DialogHeader>
               <DialogTitle>Revisar Comissão</DialogTitle>
               <DialogDescription>
                 Analise os detalhes da comissão de{" "}
-                {getColaboradorNome(selectedComissao.colaboradorId)}
+                <strong>
+                  {
+                    colaboradores.find(
+                      (c) => c.id === selectedComissao.colaboradorId
+                    )?.nome
+                  }
+                </strong>{" "}
+                para o período de <strong>{selectedComissao.periodo}</strong>.
               </DialogDescription>
             </DialogHeader>
-
-            <div className="space-y-6">
-              {/* Informações Gerais */}
+            <div className="space-y-4 py-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label>Colaborador</Label>
-                  <div className="font-medium">
-                    {getColaboradorNome(selectedComissao.colaboradorId)}
-                  </div>
-                </div>
-                <div>
-                  <Label>Período</Label>
-                  <div className="font-medium">
-                    {new Date(
-                      selectedComissao.periodo + "-01"
-                    ).toLocaleDateString("pt-BR", {
-                      month: "long",
-                      year: "numeric",
+                  <Label className="text-sm text-muted-foreground">
+                    Valor Total da Comissão
+                  </Label>
+                  <p className="font-bold text-lg text-green-600">
+                    R${" "}
+                    {selectedComissao.valorComissao.toLocaleString("pt-BR", {
+                      minimumFractionDigits: 2,
                     })}
-                  </div>
+                  </p>
                 </div>
                 <div>
-                  <Label>Valor Total da Comissão</Label>
-                  <div className="font-medium text-green-600 text-lg">
-                    R$ {selectedComissao.valorComissao.toLocaleString()}
-                  </div>
-                </div>
-                <div>
-                  <Label>Data do Cálculo</Label>
-                  <div className="font-medium">
-                    {new Date(selectedComissao.dataCalculo).toLocaleDateString(
-                      "pt-BR"
-                    )}
-                  </div>
+                  <Label className="text-sm text-muted-foreground">
+                    Status Atual
+                  </Label>
+                  <div>{getStatusBadge(selectedComissao.status)}</div>
                 </div>
               </div>
-
-              {/* Detalhes por Forma de Pagamento */}
               <div>
-                <Label>Detalhamento por Forma de Pagamento</Label>
-                <div className="mt-2 border rounded-lg">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Forma de Pagamento</TableHead>
-                        <TableHead>Valor das Vendas</TableHead>
-                        <TableHead>Percentual</TableHead>
-                        <TableHead>Comissão</TableHead>
+                <Label className="text-sm text-muted-foreground">
+                  Detalhes por Forma de Pagamento
+                </Label>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Forma</TableHead>
+                      <TableHead>Valor Vendido</TableHead>
+                      <TableHead>Comissão</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {selectedComissao.detalhes.map((d, i) => (
+                      <TableRow key={i}>
+                        <TableCell>{d.formaPagamento}</TableCell>
+                        <TableCell>
+                          R${" "}
+                          {d.valor.toLocaleString("pt-BR", {
+                            minimumFractionDigits: 2,
+                          })}
+                        </TableCell>
+                        <TableCell>
+                          R${" "}
+                          {d.comissao.toLocaleString("pt-BR", {
+                            minimumFractionDigits: 2,
+                          })}
+                        </TableCell>
                       </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {selectedComissao.detalhes.map((detalhe, index) => (
-                        <TableRow key={index}>
-                          <TableCell>{detalhe.formaPagamento}</TableCell>
-                          <TableCell>
-                            R$ {detalhe.valor.toLocaleString()}
-                          </TableCell>
-                          <TableCell>
-                            {formasPagamento.find(
-                              (f) => f.nome === detalhe.formaPagamento
-                            )?.percentualComissao || 0}
-                            %
-                          </TableCell>
-                          <TableCell className="font-medium text-green-600">
-                            R$ {detalhe.comissao.toLocaleString()}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                    ))}
+                  </TableBody>
+                </Table>
               </div>
-
-              {/* Observações */}
               <div>
                 <Label htmlFor="observacoes">Observações</Label>
                 <Textarea
                   id="observacoes"
                   value={observacoes}
                   onChange={(e) => setObservacoes(e.target.value)}
-                  placeholder="Adicione observações sobre esta comissão..."
+                  placeholder="Adicione observações..."
                   rows={3}
+                  disabled={
+                    selectedComissao.status !== "pendente" ||
+                    user?.tipo !== "admin"
+                  }
                 />
               </div>
             </div>
 
-            <div className="flex justify-end space-x-2 mt-6">
+            <div className="flex justify-end space-x-2">
               <Button
                 variant="outline"
                 onClick={() => setShowApprovalModal(false)}
               >
-                Cancelar
+                Fechar
               </Button>
-              <Button variant="destructive" onClick={handleRejeitar}>
-                <X className="w-4 h-4 mr-2" />
-                Rejeitar
-              </Button>
-              <Button onClick={handleAprovar}>
-                <Check className="w-4 h-4 mr-2" />
-                Aprovar
-              </Button>
+              {selectedComissao.status === "pendente" &&
+                user?.tipo === "admin" && (
+                  <>
+                    <Button variant="destructive" onClick={handleReject}>
+                      <X className="w-4 h-4 mr-2" />
+                      Rejeitar
+                    </Button>
+                    <Button onClick={handleApprove}>
+                      <Check className="w-4 h-4 mr-2" />
+                      Aprovar
+                    </Button>
+                  </>
+                )}
             </div>
           </DialogContent>
         </Dialog>
