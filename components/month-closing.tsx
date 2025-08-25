@@ -42,6 +42,8 @@ export function MonthClosing() {
     fecharMes,
     colaboradores,
     formasPagamento,
+    setComissoes,
+    setMetas,
   } = useData();
   const { getPreviousMonthPeriod, setFilterMode, setSelectedPeriod } =
     usePeriodFilter();
@@ -116,7 +118,11 @@ export function MonthClosing() {
 
   const handleConfirmClosing = () => {
     const previousMonthPeriod = getPreviousMonthPeriod();
-    fecharMes();
+    const { novasComissoes, metasAtualizadas } = fecharMes();
+
+    setComissoes(novasComissoes);
+    setMetas(metasAtualizadas);
+
     setFilterMode("period");
     setSelectedPeriod(previousMonthPeriod);
     setOpen(false);

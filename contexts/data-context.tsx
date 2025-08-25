@@ -69,7 +69,9 @@ interface DataContextType {
   marcarComissaoPaga: (id: number) => void;
   getDashboardData: () => any;
   getComissoesBaseadasEmVendas: () => any;
-  fecharMes: () => void;
+  fecharMes: () => { novasComissoes: Comissao[]; metasAtualizadas: Meta[] };
+  setComissoes: React.Dispatch<React.SetStateAction<Comissao[]>>;
+  setMetas: React.Dispatch<React.SetStateAction<Meta[]>>;
   notificacoesAtivas: any[];
 }
 
@@ -248,6 +250,59 @@ export function DataProvider({ children }: { children: ReactNode }) {
         : selectedPeriod;
     const yearToFilter = periodToFilter.substring(0, 4);
 
+    const filteredVendas = vendas.filter((v) => isDateInPeriod(v.data));
+
+    const vendasPorVendedor = colaboradores
+      .map((col) => {
+        const vendasColaborador = filteredVendas.filter(
+          (v) => v.colaboradorId === col.id
+        );
+        const totalVendido = vendasColaborador.reduce(
+          (sum, v) => sum + v.valor,
+          0
+        );
+        return { name: col.nome.split(" ")[0], value: totalVendido };
+      })
+      .filter((item) => item.value > 0);
+
+    const vendasPorPagamento = formasPagamento
+      .map((fp) => {
+        const vendasForma = filteredVendas.filter(
+          (v) => v.formaPagamento === fp.codigo
+        );
+        const totalVendido = vendasForma.reduce((sum, v) => sum + v.valor, 0);
+        return { name: fp.nome, value: totalVendido };
+      })
+      .filter((item) => item.value > 0);
+
+    const performancePeriodoSelecionado = colaboradores
+      .map((colaborador) => {
+        const metaColaborador = metas.find(
+          (m) =>
+            m.colaboradorId === colaborador.id &&
+            m.periodo === periodToFilter &&
+            m.tipo === "mensal"
+        );
+        if (!metaColaborador) return null;
+
+        const vendasColaborador = vendas.filter(
+          (v) =>
+            v.colaboradorId === colaborador.id &&
+            v.data.startsWith(periodToFilter)
+        );
+        const totalVendido = vendasColaborador.reduce(
+          (sum, v) => sum + v.valor,
+          0
+        );
+
+        return {
+          name: colaborador.nome.split(" ")[0],
+          meta: metaColaborador.valorMeta,
+          vendido: totalVendido,
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null);
+
     const colaboradoresData = colaboradores
       .filter((c) => c.status === "ativo")
       .map((colaborador) => {
@@ -320,6 +375,51 @@ export function DataProvider({ children }: { children: ReactNode }) {
         };
       });
 
+    const desempenhoPorEquipe = lojas.map((loja) => {
+      const metasEquipe = metas.filter(
+        (m) =>
+          m.lojaId === loja.id &&
+          m.status === "ativa" &&
+          m.periodo.startsWith(yearToFilter)
+      );
+      const colaboradoresDaLoja = colaboradores.filter(
+        (c) => c.lojaId === loja.id
+      );
+      const idsColaboradores = colaboradoresDaLoja.map((c) => c.id);
+
+      const vendasDaLojaNoMes = vendas.filter(
+        (v) =>
+          idsColaboradores.includes(v.colaboradorId) &&
+          v.data.startsWith(periodToFilter)
+      );
+      const totalVendidoMes = vendasDaLojaNoMes.reduce(
+        (sum, v) => sum + v.valor,
+        0
+      );
+
+      const metaMensalEquipe = metasEquipe.find(
+        (m) => m.tipo === "mensal" && m.periodo === periodToFilter
+      );
+
+      return {
+        loja,
+        colaboradores: colaboradoresDaLoja,
+        totalVendidoMes,
+        metaMensal: metaMensalEquipe
+          ? {
+              ...metaMensalEquipe,
+              vendido: totalVendidoMes,
+              percentual:
+                metaMensalEquipe.valorMeta > 0
+                  ? Math.round(
+                      (totalVendidoMes / metaMensalEquipe.valorMeta) * 100
+                    )
+                  : 0,
+            }
+          : null,
+      };
+    });
+
     const totalVendido = colaboradoresData.reduce(
       (sum, col) => sum + col.vendidoMes,
       0
@@ -343,7 +443,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
       totalVendido,
       totalComissao,
       percentualGeralMensal,
-      filteredVendas: vendas.filter((v) => isDateInPeriod(v.data)),
+      filteredVendas,
+      vendasPorVendedor,
+      vendasPorPagamento,
+      performancePeriodoSelecionado,
+      desempenhoPorEquipe,
     };
   }, [
     vendas,
@@ -359,6 +463,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const getComissoesBaseadasEmVendas = useCallback(() => {
     const filteredVendas = vendas.filter((v) => isDateInPeriod(v.data));
+
+    if (filteredVendas.length === 0) {
+      return {
+        vendasPorColaborador: [],
+        totalGeralComissoes: 0,
+        resumoPorForma: [],
+      };
+    }
 
     const vendasPorColaborador = colaboradores
       .map((colaborador) => {
@@ -459,10 +571,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
         title: "Nenhuma venda no mês anterior para fechar.",
         variant: "destructive",
       });
-      return;
+      return { novasComissoes: comissoes, metasAtualizadas: metas };
     }
 
-    const novasMetas: Meta[] = [];
+    let novasMetas: Meta[] = [];
     const metasAtualizadas = metas.map((meta) => {
       if (meta.periodo === periodoFechamento && meta.status === "ativa") {
         if (meta.recorrente && meta.tipo === "mensal") {
@@ -489,9 +601,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       return meta;
     });
 
-    setMetas([...metasAtualizadas, ...novasMetas]);
-
-    const comissoesCalculadas: Comissao[] = [];
+    let comissoesCalculadas: Comissao[] = [];
     colaboradores.forEach((col) => {
       const vendasColaborador = vendasDoPeriodo.filter(
         (v) => v.colaboradorId === col.id
@@ -533,12 +643,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    setComissoes((prev) => [...prev, ...comissoesCalculadas]);
-
     toast({
       title: `Mês ${periodoFechamento} fechado!`,
       description: `${comissoesCalculadas.length} comissões geradas para aprovação.`,
     });
+
+    const metasFinais = [...metasAtualizadas, ...novasMetas];
+    const comissoesFinais = [...comissoes, ...comissoesCalculadas];
+
+    return { novasComissoes: comissoesFinais, metasAtualizadas: metasFinais };
   }, [
     metas,
     vendas,
@@ -581,6 +694,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     getDashboardData,
     getComissoesBaseadasEmVendas,
     fecharMes,
+    setComissoes,
+    setMetas,
     notificacoesAtivas: [],
   };
 

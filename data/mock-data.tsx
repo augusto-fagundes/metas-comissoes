@@ -17,13 +17,14 @@ export interface Loja {
 
 export interface Meta {
   id: number;
-  colaboradorId: number;
-  periodo: string; // Formato "YYYY-MM" para mensal, "YYYY" para anual
+  colaboradorId?: number; // Meta individual (agora opcional)
+  lojaId?: number; // Nova propriedade para meta de equipa (opcional)
+  periodo: string;
   valorMeta: number;
   descricao: string;
   status: "ativa" | "concluida" | "cancelada";
   tipo: "mensal" | "anual";
-  recorrente: boolean; // Se a meta mensal deve ser recriada no próximo mês
+  recorrente: boolean;
 }
 
 export interface Venda {
@@ -31,7 +32,7 @@ export interface Venda {
   colaboradorId: number;
   cliente: string;
   valor: number;
-  data: string; // Formato "YYYY-MM-DD"
+  data: string;
   formaPagamento: string;
   status: "confirmada" | "pendente";
   observacoes?: string;
@@ -48,7 +49,7 @@ export interface FormaPagamento {
 export interface Comissao {
   id: number;
   colaboradorId: number;
-  periodo: string; // "YYYY-MM"
+  periodo: string;
   valorComissao: number;
   status: "pendente" | "aprovada" | "rejeitada" | "paga";
   dataCalculo: string;
@@ -99,10 +100,30 @@ export const colaboradores: Colaborador[] = [
     dataAdmissao: "2023-02-20",
     status: "ativo",
   },
+  {
+    id: 3,
+    nome: "Pedro Oliveira",
+    email: "pedro@empresa.com",
+    telefone: "(11) 99999-0003",
+    cargo: "Vendedor Senior",
+    lojaId: 1,
+    dataAdmissao: "2022-11-10",
+    status: "ativo",
+  },
+  {
+    id: 4,
+    nome: "Ana Costa",
+    email: "ana@empresa.com",
+    telefone: "(11) 99999-0004",
+    cargo: "Vendedora",
+    lojaId: 2,
+    dataAdmissao: "2023-03-05",
+    status: "ativo",
+  },
 ];
 
-export const metas: Meta[] = [];
-export const vendas: Venda[] = [];
+export let metas: Meta[] = [];
+export let vendas: Venda[] = [];
 
 export const formasPagamento: FormaPagamento[] = [
   { id: 1, codigo: "PIX", nome: "PIX", percentualComissao: 6.0, ativo: true },
@@ -142,4 +163,4 @@ export const usuarios: Usuario[] = [
   },
 ];
 
-export const comissoes: Comissao[] = [];
+export let comissoes: Comissao[] = [];

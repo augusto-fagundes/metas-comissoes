@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Dialog,
   DialogContent,
@@ -45,12 +46,16 @@ import { CommissionInfoPanel } from "@/components/commission-info-panel";
 import { Meta } from "@/data/mock-data";
 
 export function MetasPage() {
-  const { metas, colaboradores, addMeta, updateMeta, deleteMeta } = useData();
+  const { metas, colaboradores, lojas, addMeta, updateMeta, deleteMeta } =
+    useData();
   const [showDialog, setShowDialog] = useState(false);
   const [editingMeta, setEditingMeta] = useState<Meta | null>(null);
 
+  const [targetType, setTargetType] = useState<"individual" | "equipe">(
+    "individual"
+  );
   const [formData, setFormData] = useState({
-    colaboradorId: "",
+    targetId: "", // Pode ser colaboradorId ou lojaId
     periodo: "",
     valorMeta: "",
     descricao: "",
@@ -60,20 +65,23 @@ export function MetasPage() {
 
   const resetForm = () => {
     setFormData({
-      colaboradorId: "",
+      targetId: "",
       periodo: "",
       valorMeta: "",
       descricao: "",
       tipo: "mensal",
       recorrente: false,
     });
+    setTargetType("individual");
     setEditingMeta(null);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const metaData = {
-      colaboradorId: Number.parseInt(formData.colaboradorId),
+      colaboradorId:
+        targetType === "individual" ? Number(formData.targetId) : undefined,
+      lojaId: targetType === "equipe" ? Number(formData.targetId) : undefined,
       periodo: formData.periodo,
       valorMeta: Number.parseFloat(formData.valorMeta),
       descricao: formData.descricao,
@@ -94,9 +102,11 @@ export function MetasPage() {
   };
 
   const handleEdit = (meta: Meta) => {
+    const isEquipe = meta.lojaId != null;
+    setTargetType(isEquipe ? "equipe" : "individual");
     setEditingMeta(meta);
     setFormData({
-      colaboradorId: meta.colaboradorId.toString(),
+      targetId: (isEquipe ? meta.lojaId : meta.colaboradorId)?.toString() ?? "",
       periodo: meta.periodo,
       valorMeta: meta.valorMeta.toString(),
       descricao: meta.descricao,
@@ -113,8 +123,17 @@ export function MetasPage() {
     }
   };
 
-  const getColaboradorNome = (colaboradorId: number) => {
-    return colaboradores.find((c) => c.id === colaboradorId)?.nome || "N/A";
+  const getTargetName = (meta: Meta) => {
+    if (meta.lojaId) {
+      return lojas.find((l) => l.id === meta.lojaId)?.nome || "Equipe N/A";
+    }
+    if (meta.colaboradorId) {
+      return (
+        colaboradores.find((c) => c.id === meta.colaboradorId)?.nome ||
+        "Colaborador N/A"
+      );
+    }
+    return "N/A";
   };
 
   const getStatusBadge = (status: string) => {
@@ -155,28 +174,62 @@ export function MetasPage() {
               <DialogTitle>
                 {editingMeta ? "Editar Meta" : "Nova Meta"}
               </DialogTitle>
-              <DialogDescription>
-                Defina os detalhes da meta para um colaborador.
-              </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="colaboradorId">Colaborador</Label>
+                <Label>Esta meta é para:</Label>
+                <RadioGroup
+                  value={targetType}
+                  onValueChange={(value) => {
+                    setTargetType(value as any);
+                    setFormData((f) => ({ ...f, targetId: "" })); // Limpa a seleção ao trocar o tipo
+                  }}
+                  className="flex gap-4"
+                  disabled={!!editingMeta} // Desabilita a troca se estiver a editar
+                >
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="individual" id="individual" />
+                    <Label htmlFor="individual">Individual</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="equipe" id="equipe" />
+                    <Label htmlFor="equipe">Equipe</Label>
+                  </div>
+                </RadioGroup>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="targetId">
+                  {targetType === "individual" ? "Colaborador" : "Equipe"}
+                </Label>
                 <Select
-                  value={formData.colaboradorId}
+                  value={formData.targetId}
                   onValueChange={(value) =>
-                    setFormData({ ...formData, colaboradorId: value })
+                    setFormData({ ...formData, targetId: value })
                   }
+                  disabled={!!editingMeta} // Desabilita a troca se estiver a editar
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Selecione o colaborador" />
+                    <SelectValue
+                      placeholder={`Selecione ${
+                        targetType === "individual"
+                          ? "o colaborador"
+                          : "a equipe"
+                      }`}
+                    />
                   </SelectTrigger>
                   <SelectContent>
-                    {colaboradores.map((c) => (
-                      <SelectItem key={c.id} value={c.id.toString()}>
-                        {c.nome}
-                      </SelectItem>
-                    ))}
+                    {targetType === "individual"
+                      ? colaboradores.map((c) => (
+                          <SelectItem key={c.id} value={c.id.toString()}>
+                            {c.nome}
+                          </SelectItem>
+                        ))
+                      : lojas.map((l) => (
+                          <SelectItem key={l.id} value={l.id.toString()}>
+                            {l.nome}
+                          </SelectItem>
+                        ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -277,81 +330,19 @@ export function MetasPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Metas Ativas</CardTitle>
-            <Target className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">
-              {metasAtivas.length}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              de {metas.length} metas totais
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Valor Total em Metas
-            </CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              R$ {totalMetasValor.toLocaleString()}
-            </div>
-            <p className="text-xs text-muted-foreground">em metas ativas</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Colaboradores com Meta
-            </CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {new Set(metasAtivas.map((m) => m.colaboradorId)).size}
-            </div>
-            <p className="text-xs text-muted-foreground">com metas ativas</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Média por Meta
-            </CardTitle>
-            <Target className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              R${" "}
-              {metasAtivas.length > 0
-                ? Math.round(
-                    totalMetasValor / metasAtivas.length
-                  ).toLocaleString()
-                : 0}
-            </div>
-            <p className="text-xs text-muted-foreground">valor médio</p>
-          </CardContent>
-        </Card>
+        {/* ... Cards de Resumo ... */}
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle>Lista de Metas</CardTitle>
-          <CardDescription>
-            Gerencie todas as metas definidas para a equipe
-          </CardDescription>
+          <CardDescription>Gerencie todas as metas definidas</CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Colaborador</TableHead>
+                <TableHead>Alvo da Meta</TableHead>
                 <TableHead>Período</TableHead>
                 <TableHead>Tipo</TableHead>
                 <TableHead>Valor da Meta</TableHead>
@@ -363,12 +354,12 @@ export function MetasPage() {
               {metas.map((meta) => (
                 <TableRow key={meta.id}>
                   <TableCell className="font-medium">
-                    {getColaboradorNome(meta.colaboradorId)}
+                    {getTargetName(meta)}
                   </TableCell>
                   <TableCell>{meta.periodo}</TableCell>
                   <TableCell>
                     <Badge variant="outline" className="capitalize">
-                      {meta.tipo}
+                      {meta.lojaId ? "Equipe" : "Individual"}
                       {meta.recorrente ? " (R)" : ""}
                     </Badge>
                   </TableCell>

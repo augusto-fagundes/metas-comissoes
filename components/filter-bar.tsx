@@ -28,7 +28,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { usePeriodFilter } from "@/contexts/period-filter-context";
 import { useData } from "@/contexts/data-context";
 import { useAuth } from "@/contexts/auth-context";
-// 1. Importe o novo componente que acabamos de criar
 import { MonthClosing } from "@/components/month-closing";
 
 export function FilterBar() {
@@ -109,7 +108,6 @@ export function FilterBar() {
             </Select>
           )}
 
-          {/* 2. O botão de fechamento agora é renderizado pelo nosso componente inteligente */}
           {isAdmin() && <MonthClosing />}
         </div>
 

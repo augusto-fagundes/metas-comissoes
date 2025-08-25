@@ -32,10 +32,10 @@ const PeriodFilterContext = createContext<PeriodFilterContextType | undefined>(
 
 export function PeriodFilterProvider({ children }: { children: ReactNode }) {
   const [simulationDate, setSimulationDate] = useState(
-    new Date("2025-08-15T12:00:00")
+    new Date("2025-08-01T12:00:00")
   );
   const [filterMode, setFilterMode] = useState<FilterMode>("live");
-  const [selectedPeriod, setSelectedPeriod] = useState("2024-01");
+  const [selectedPeriod, setSelectedPeriod] = useState("2025-08"); // É bom atualizar o período inicial também
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
 
   const getLivePeriod = () => format(simulationDate, "yyyy-MM");
