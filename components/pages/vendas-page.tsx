@@ -12,6 +12,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { DateRange } from "react-day-picker";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+
 import {
   Dialog,
   DialogContent,
@@ -54,12 +64,15 @@ import {
   ArrowUpDown,
   FilterX,
   ChevronDown,
+  Calendar as CalendarIcon,
 } from "lucide-react";
 import { useData } from "@/contexts/data-context";
 import { useAuth } from "@/contexts/auth-context";
 import { toast } from "@/hooks/use-toast";
 import { ImportVendas } from "@/components/import-vendas";
 import { Venda } from "@/data/mock-data";
+import { usePeriodFilter } from "@/contexts/period-filter-context";
+import { FilterBar } from "@/components/filter-bar";
 
 type SortKey = keyof Venda | "colaboradorNome" | "comissao";
 type SortDirection = "ascending" | "descending";
@@ -75,6 +88,7 @@ export function VendasPage() {
     deleteVenda,
   } = useData();
   const { user, isAdmin } = useAuth();
+  const { isDateInPeriod } = usePeriodFilter();
 
   const [showAddVendaDialog, setShowAddVendaDialog] = useState(false);
   const [showImportView, setShowImportView] = useState(false);
@@ -87,11 +101,10 @@ export function VendasPage() {
     formaPagamento: "",
   });
 
-  // Estados para filtros e ordenação
   const [filterLoja, setFilterLoja] = useState<string>("");
-  // ALTERAÇÃO: 'filterColaborador' agora é um array de strings (IDs)
   const [filterColaborador, setFilterColaborador] = useState<string[]>([]);
   const [filterFormaPagamento, setFilterFormaPagamento] = useState<string>("");
+  const [dateRange, setDateRange] = useState<DateRange | undefined>();
   const [sortConfig, setSortConfig] = useState<{
     key: SortKey;
     direction: SortDirection;
@@ -176,8 +189,9 @@ export function VendasPage() {
 
   const resetFilters = () => {
     setFilterLoja("");
-    setFilterColaborador([]); // Reseta para um array vazio
+    setFilterColaborador([]);
     setFilterFormaPagamento("");
+    setDateRange(undefined);
   };
 
   const requestSort = (key: SortKey) => {
@@ -197,22 +211,29 @@ export function VendasPage() {
       ? vendas
       : vendas.filter((v) => v.colaboradorId === user?.colaboradorId);
 
-    items = items.map((venda) => {
-      const colaborador = colaboradores.find(
-        (c) => c.id === venda.colaboradorId
-      );
-      return {
-        ...venda,
-        colaboradorNome: colaborador?.nome || "",
-        lojaId: colaborador?.lojaId,
-        comissao: calcularComissao(venda.valor, venda.formaPagamento),
-      };
-    });
+    // 1. Filtro Global de Período
+    items = items.filter((venda) => isDateInPeriod(venda.data));
+
+    // 2. Filtros Locais da Página
+    if (dateRange?.from) {
+      items = items.filter((venda) => {
+        const vendaDate = new Date(`${venda.data}T12:00:00`);
+        const from = dateRange.from!;
+        const to = dateRange.to ?? from;
+        from.setHours(0, 0, 0, 0);
+        to.setHours(23, 59, 59, 999);
+        return vendaDate >= from && vendaDate <= to;
+      });
+    }
 
     if (filterLoja) {
-      items = items.filter((item) => item.lojaId === parseInt(filterLoja));
+      const colaboradoresNaLoja = colaboradores
+        .filter((c) => c.lojaId === parseInt(filterLoja))
+        .map((c) => c.id);
+      items = items.filter((item) =>
+        colaboradoresNaLoja.includes(item.colaboradorId)
+      );
     }
-    // ALTERAÇÃO: A lógica agora verifica se o ID está INCLUÍDO no array de filtros
     if (filterColaborador.length > 0) {
       items = items.filter((item) =>
         filterColaborador.includes(item.colaboradorId.toString())
@@ -224,6 +245,15 @@ export function VendasPage() {
       );
     }
 
+    // 3. Adiciona dados para ordenação
+    items = items.map((venda) => ({
+      ...venda,
+      colaboradorNome:
+        colaboradores.find((c) => c.id === venda.colaboradorId)?.nome || "",
+      comissao: calcularComissao(venda.valor, venda.formaPagamento),
+    }));
+
+    // 4. Aplica Ordenação
     if (sortConfig !== null) {
       items.sort((a, b) => {
         if (a[sortConfig.key] < b[sortConfig.key]) {
@@ -246,6 +276,8 @@ export function VendasPage() {
     filterFormaPagamento,
     sortConfig,
     colaboradores,
+    isDateInPeriod,
+    dateRange,
   ]);
 
   const totalVendas = sortedAndFilteredVendas.reduce(
@@ -277,7 +309,9 @@ export function VendasPage() {
         className="px-2"
       >
         {children}
-        <ArrowUpDown className="ml-2 h-4 w-4" />
+        {sortConfig?.key === sortKey && (
+          <ArrowUpDown className="ml-2 h-4 w-4" />
+        )}
       </Button>
     </TableHead>
   );
@@ -312,6 +346,8 @@ export function VendasPage() {
           </Button>
         </div>
       </div>
+
+      <FilterBar />
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
@@ -388,10 +424,7 @@ export function VendasPage() {
       {isAdmin() && (
         <Card>
           <CardHeader>
-            <CardTitle>Filtros e Ordenação</CardTitle>
-            <CardDescription>
-              Refine sua busca para analisar os dados de vendas.
-            </CardDescription>
+            <CardTitle>Filtros Avançados</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-2">
@@ -411,10 +444,9 @@ export function VendasPage() {
             </div>
             <div className="flex items-center gap-2">
               <Label>Vendedor:</Label>
-              {/* NOVO COMPONENTE DE MULTI-SELEÇÃO */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" className="w-48 justify-between">
+                  <Button variant="outline" className="w-56 justify-between">
                     {filterColaborador.length === 0 && "Todos os Vendedores"}
                     {filterColaborador.length === 1 &&
                       colaboradores.find(
@@ -425,7 +457,7 @@ export function VendasPage() {
                     <ChevronDown className="h-4 w-4 opacity-50" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent className="w-48">
+                <DropdownMenuContent className="w-56">
                   <DropdownMenuLabel>Vendedores da Equipe</DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   {colaboradoresFiltradosPorLoja.map((colaborador) => (
@@ -471,6 +503,46 @@ export function VendasPage() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="flex items-center gap-2">
+              <Label>Período:</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    id="date"
+                    variant={"outline"}
+                    className="w-[260px] justify-start text-left font-normal"
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {dateRange?.from ? (
+                      dateRange.to ? (
+                        <>
+                          {format(dateRange.from, "LLL dd, y", {
+                            locale: ptBR,
+                          })}{" "}
+                          -{" "}
+                          {format(dateRange.to, "LLL dd, y", { locale: ptBR })}
+                        </>
+                      ) : (
+                        format(dateRange.from, "LLL dd, y", { locale: ptBR })
+                      )
+                    ) : (
+                      <span>Selecione um intervalo</span>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    initialFocus
+                    mode="range"
+                    defaultMonth={dateRange?.from}
+                    selected={dateRange}
+                    onSelect={setDateRange}
+                    numberOfMonths={2}
+                    locale={ptBR}
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
             <Button variant="ghost" onClick={resetFilters}>
               <FilterX className="w-4 h-4 mr-2" /> Limpar Filtros
             </Button>
@@ -502,50 +574,63 @@ export function VendasPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {sortedAndFilteredVendas.map((venda) => (
-                <TableRow key={venda.id}>
-                  <TableCell className="font-medium">#{venda.id}</TableCell>
-                  {isAdmin() && <TableCell>{venda.colaboradorNome}</TableCell>}
-                  <TableCell>{venda.cliente}</TableCell>
-                  <TableCell>
-                    R${" "}
-                    {venda.valor.toLocaleString("pt-BR", {
-                      minimumFractionDigits: 2,
-                    })}
-                  </TableCell>
-                  <TableCell>
-                    {new Date(`${venda.data}T12:00:00`).toLocaleDateString(
-                      "pt-BR"
-                    )}
-                  </TableCell>
-                  <TableCell>{venda.formaPagamento}</TableCell>
-                  <TableCell>
-                    R${" "}
-                    {venda.comissao.toLocaleString("pt-BR", {
-                      minimumFractionDigits: 2,
-                    })}
-                  </TableCell>
-                  <TableCell>{getStatusBadge(venda.status)}</TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex gap-2 justify-end">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleEdit(venda)}
-                      >
-                        <Edit className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleDelete(venda.id)}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
+              {sortedAndFilteredVendas.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={isAdmin() ? 9 : 8}
+                    className="h-24 text-center"
+                  >
+                    Nenhuma venda encontrada com os filtros aplicados.
                   </TableCell>
                 </TableRow>
-              ))}
+              ) : (
+                sortedAndFilteredVendas.map((venda) => (
+                  <TableRow key={venda.id}>
+                    <TableCell className="font-medium">#{venda.id}</TableCell>
+                    {isAdmin() && (
+                      <TableCell>{venda.colaboradorNome}</TableCell>
+                    )}
+                    <TableCell>{venda.cliente}</TableCell>
+                    <TableCell>
+                      R${" "}
+                      {venda.valor.toLocaleString("pt-BR", {
+                        minimumFractionDigits: 2,
+                      })}
+                    </TableCell>
+                    <TableCell>
+                      {new Date(`${venda.data}T12:00:00`).toLocaleDateString(
+                        "pt-BR"
+                      )}
+                    </TableCell>
+                    <TableCell>{venda.formaPagamento}</TableCell>
+                    <TableCell>
+                      R${" "}
+                      {venda.comissao.toLocaleString("pt-BR", {
+                        minimumFractionDigits: 2,
+                      })}
+                    </TableCell>
+                    <TableCell>{getStatusBadge(venda.status)}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex gap-2 justify-end">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEdit(venda)}
+                        >
+                          <Edit className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDelete(venda.id)}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
             </TableBody>
           </Table>
         </CardContent>
