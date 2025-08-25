@@ -17,8 +17,8 @@ export interface Loja {
 
 export interface Meta {
   id: number;
-  colaboradorId?: number; // Meta individual (agora opcional)
-  lojaId?: number; // Nova propriedade para meta de equipa (opcional)
+  colaboradorId?: number;
+  lojaId?: number;
   periodo: string;
   valorMeta: number;
   descricao: string;

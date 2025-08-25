@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState, useMemo } from "react";
 import {
   Card,
   CardContent,
@@ -18,25 +18,26 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  Legend,
   PieChart,
   Pie,
   Cell,
-  Legend,
 } from "recharts";
-import {
-  Target,
-  TrendingUp,
-  Users,
-  DollarSign,
-  BarChart2,
-  Building,
-} from "lucide-react";
+import { Target, TrendingUp, Users, DollarSign, Building } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { useData } from "@/contexts/data-context";
 import { FilterBar } from "@/components/filter-bar";
 import { usePeriodFilter } from "@/contexts/period-filter-context";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "../ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { PeriodComparison } from "@/components/period-comparison";
 
 const getStatusColor = (percentual: number) => {
   if (percentual >= 100) return "bg-green-500";
@@ -162,21 +163,52 @@ const EquipePerformanceCard = ({ equipeData }) => {
   );
 };
 
-const PIE_COLORS = [
-  "#3b82f6",
-  "#10b981",
-  "#f97316",
-  "#ef4444",
-  "#8b5cf6",
-  "#eab308",
-];
+const PIE_COLORS = {
+  vendido: "#3b82f6", // Azul
+  faltante: "#e5e7eb", // Cinza
+};
 
 export function DashboardPage() {
   const { isAdmin } = useAuth();
-  const { getDashboardData } = useData();
-  const { getPeriodLabel, filterMode } = usePeriodFilter();
+  const { getDashboardData, lojas } = useData();
+  const { getPeriodLabel } = usePeriodFilter();
+  const [equipeSelecionada, setEquipeSelecionada] = useState<string>("todas");
 
   const dashboardData = getDashboardData();
+
+  // Memoização para recalcular os dados do gráfico de Vendas x Meta
+  const dadosGraficoPizza = useMemo(() => {
+    if (!dashboardData) return { data: [], totalMeta: 0, totalVendido: 0 };
+
+    let meta = 0;
+    let vendido = 0;
+    let nome = "Desempenho Geral";
+
+    if (equipeSelecionada === "todas") {
+      meta = dashboardData.totalMetaMensal;
+      vendido = dashboardData.totalVendido;
+    } else {
+      const idEquipe = parseInt(equipeSelecionada, 10);
+      const dadosEquipe = dashboardData.desempenhoPorEquipe.find(
+        (e) => e.loja.id === idEquipe
+      );
+      if (dadosEquipe) {
+        meta = dadosEquipe.metaMensal?.valorMeta || 0;
+        vendido = dadosEquipe.totalVendidoMes;
+        nome = dadosEquipe.loja.nome;
+      }
+    }
+
+    const faltante = Math.max(0, meta - vendido);
+
+    const data = [{ name: "Vendido", value: vendido }];
+
+    if (faltante > 0) {
+      data.push({ name: "Faltante p/ Meta", value: faltante });
+    }
+
+    return { data, totalMeta: meta, totalVendido: vendido, nome };
+  }, [dashboardData, equipeSelecionada]);
 
   if (!dashboardData) return <div>Carregando...</div>;
 
@@ -263,59 +295,91 @@ export function DashboardPage() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* GRÁFICO 1: Desempenho por Vendedor (Meta vs Vendido) */}
             <Card>
               <CardHeader>
-                <CardTitle>Vendas por Vendedor (Mês)</CardTitle>
+                <CardTitle>Desempenho por Vendedor (Mês)</CardTitle>
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={dashboardData.vendasPorVendedor}
-                      dataKey="value"
-                      nameKey="name"
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={100}
-                      fill="#8884d8"
-                      label={(props) => props.name}
-                    >
-                      {dashboardData.vendasPorVendedor.map((entry, index) => (
-                        <Cell
-                          key={`cell-${index}`}
-                          fill={PIE_COLORS[index % PIE_COLORS.length]}
-                        />
-                      ))}
-                    </Pie>
+                  <BarChart
+                    data={dashboardData.performancePeriodoSelecionado}
+                    margin={{ top: 5, right: 20, left: -10, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" />
+                    <YAxis tickFormatter={(value) => `R$${value / 1000}k`} />
                     <Tooltip
                       formatter={(value) => `R$ ${value.toLocaleString()}`}
                     />
                     <Legend />
-                  </PieChart>
+                    <Bar
+                      dataKey="meta"
+                      fill="#a1a1aa"
+                      name="Meta"
+                      radius={[4, 4, 0, 0]}
+                    />
+                    <Bar
+                      dataKey="vendido"
+                      fill="#10b981"
+                      name="Vendido"
+                      radius={[4, 4, 0, 0]}
+                    />
+                  </BarChart>
                 </ResponsiveContainer>
               </CardContent>
             </Card>
+            {/* GRÁFICO 2: Vendas x Meta Geral (com filtro) */}
             <Card>
               <CardHeader>
-                <CardTitle>Vendas por Forma de Pagamento (Mês)</CardTitle>
+                <div className="flex justify-between items-center">
+                  <CardTitle>Progresso da Meta</CardTitle>
+                  <Select
+                    value={equipeSelecionada}
+                    onValueChange={setEquipeSelecionada}
+                  >
+                    <SelectTrigger className="w-[180px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todas">Todas as Equipes</SelectItem>
+                      {lojas.map((loja) => (
+                        <SelectItem key={loja.id} value={String(loja.id)}>
+                          {loja.nome}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <CardDescription>{dadosGraficoPizza.nome}</CardDescription>
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
                   <PieChart>
                     <Pie
-                      data={dashboardData.vendasPorPagamento}
+                      data={dadosGraficoPizza.data}
                       dataKey="value"
                       nameKey="name"
                       cx="50%"
                       cy="50%"
                       outerRadius={100}
-                      fill="#82ca9d"
-                      label
+                      innerRadius={60}
+                      paddingAngle={3}
+                      labelLine={false}
                     >
-                      {dashboardData.vendasPorPagamento.map((entry, index) => (
+                      {dadosGraficoPizza.data.map((entry, index) => (
                         <Cell
                           key={`cell-${index}`}
-                          fill={PIE_COLORS[index % PIE_COLORS.length]}
+                          fill={
+                            entry.name === "Vendido"
+                              ? PIE_COLORS.vendido
+                              : PIE_COLORS.faltante
+                          }
+                          stroke={
+                            entry.name === "Vendido"
+                              ? PIE_COLORS.vendido
+                              : PIE_COLORS.faltante
+                          }
                         />
                       ))}
                     </Pie>
@@ -323,6 +387,29 @@ export function DashboardPage() {
                       formatter={(value) => `R$ ${value.toLocaleString()}`}
                     />
                     <Legend />
+                    {/* Texto no centro do gráfico */}
+                    <text
+                      x="50%"
+                      y="48%"
+                      textAnchor="middle"
+                      dominantBaseline="middle"
+                      className="text-2xl font-bold fill-foreground"
+                    >
+                      {`${(
+                        (dadosGraficoPizza.totalVendido /
+                          (dadosGraficoPizza.totalMeta || 1)) *
+                        100
+                      ).toFixed(0)}%`}
+                    </text>
+                    <text
+                      x="50%"
+                      y="58%"
+                      textAnchor="middle"
+                      dominantBaseline="middle"
+                      className="text-sm fill-muted-foreground"
+                    >
+                      Atingido
+                    </text>
                   </PieChart>
                 </ResponsiveContainer>
               </CardContent>
@@ -389,45 +476,7 @@ export function DashboardPage() {
         </TabsContent>
       </Tabs>
 
-      {filterMode === "period" && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <BarChart2 className="w-5 h-5" /> Desempenho Comparativo do
-              Período
-            </CardTitle>
-            <CardDescription>
-              Meta vs. Vendido para cada vendedor no período de{" "}
-              {getPeriodLabel().replace("de ", "")}.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={350}>
-              <BarChart data={dashboardData.performancePeriodoSelecionado}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" />
-                <YAxis tickFormatter={(value) => `R$ ${value / 1000}k`} />
-                <Tooltip
-                  formatter={(value) => `R$ ${value.toLocaleString()}`}
-                />
-                <Legend />
-                <Bar
-                  dataKey="meta"
-                  fill="#e5e7eb"
-                  name="Meta"
-                  radius={[4, 4, 0, 0]}
-                />
-                <Bar
-                  dataKey="vendido"
-                  fill="#10b981"
-                  name="Vendido"
-                  radius={[4, 4, 0, 0]}
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-      )}
+      <PeriodComparison />
     </div>
   );
 }

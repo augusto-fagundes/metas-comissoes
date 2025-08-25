@@ -13,7 +13,6 @@ import { VendasPage } from "@/components/pages/vendas-page";
 import { ComissoesPage } from "@/components/pages/comissoes-page";
 import { ConfiguracoesPage } from "@/components/pages/configuracoes-page";
 import { NotificacoesPage } from "@/components/pages/notificacoes-page";
-// CORREÇÃO: O Toaster correto para esta implementação vem de 'sonner'.
 import { Toaster } from "sonner";
 
 function AppContent() {
@@ -51,7 +50,6 @@ function AppContent() {
         <div className="flex h-screen bg-gray-50">
           <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
           <main className="flex-1 overflow-auto p-6">{renderContent()}</main>
-          {/* O Toaster da Sonner não precisa de children e é auto-fechado */}
           <Toaster />
         </div>
       </DataProvider>
