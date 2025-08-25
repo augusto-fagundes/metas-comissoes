@@ -87,8 +87,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [comissoes, setComissoes] = useState<Comissao[]>(initialComissoes);
   const [usuarios, setUsuarios] = useState<Usuario[]>(initialUsuarios);
 
-  const { isDateInPeriod, selectedPeriod, getPreviousMonthPeriod } =
-    usePeriodFilter();
+  const {
+    isDateInPeriod,
+    selectedPeriod,
+    getPreviousMonthPeriod,
+    filterMode,
+    simulationDate,
+  } = usePeriodFilter();
 
   const addColaborador = (
     colaborador: Omit<Colaborador, "id" | "dataAdmissao" | "status">
@@ -237,23 +242,45 @@ export function DataProvider({ children }: { children: ReactNode }) {
   };
 
   const getDashboardData = useCallback(() => {
-    const filteredVendas = vendas.filter((v) => isDateInPeriod(v.data));
+    const periodToFilter =
+      filterMode === "live"
+        ? format(simulationDate, "yyyy-MM")
+        : selectedPeriod;
+    const yearToFilter = periodToFilter.substring(0, 4);
+
     const colaboradoresData = colaboradores
       .filter((c) => c.status === "ativo")
       .map((colaborador) => {
-        const metasColaborador = metas.filter(
+        const metasMensais = metas.filter(
           (m) =>
             m.colaboradorId === colaborador.id &&
             m.status === "ativa" &&
-            isDateInPeriod(m.periodo)
+            m.tipo === "mensal" &&
+            m.periodo === periodToFilter
         );
-        const vendasColaborador = filteredVendas.filter(
-          (v) => v.colaboradorId === colaborador.id
+        const metasAnuais = metas.filter(
+          (m) =>
+            m.colaboradorId === colaborador.id &&
+            m.status === "ativa" &&
+            m.tipo === "anual" &&
+            m.periodo === yearToFilter
         );
-        const loja = lojas.find((l) => l.id === colaborador.lojaId);
-        const vendido = vendasColaborador.reduce((sum, v) => sum + v.valor, 0);
 
-        const comissao = vendasColaborador.reduce((sum, venda) => {
+        const vendasNoMes = vendas.filter(
+          (v) =>
+            v.colaboradorId === colaborador.id &&
+            v.data.startsWith(periodToFilter)
+        );
+        const vendasNoAno = vendas.filter(
+          (v) =>
+            v.colaboradorId === colaborador.id &&
+            v.data.startsWith(yearToFilter)
+        );
+
+        const vendidoMes = vendasNoMes.reduce((sum, v) => sum + v.valor, 0);
+        const vendidoAno = vendasNoAno.reduce((sum, v) => sum + v.valor, 0);
+
+        const comissaoMes = vendasNoMes.reduce((sum, venda) => {
           const forma = formasPagamento.find(
             (f) => f.codigo === venda.formaPagamento
           );
@@ -266,45 +293,69 @@ export function DataProvider({ children }: { children: ReactNode }) {
           id: colaborador.id,
           nome: colaborador.nome,
           cargo: colaborador.cargo,
-          equipe: loja?.nome || "Sem loja",
+          equipe:
+            lojas.find((l) => l.id === colaborador.lojaId)?.nome || "Sem loja",
           foto: colaborador.foto,
-          metas: metasColaborador.map((meta) => ({
+
+          metasMensais: metasMensais.map((meta) => ({
             ...meta,
-            vendido,
+            vendido: vendidoMes,
             percentual:
               meta.valorMeta > 0
-                ? Math.round((vendido / meta.valorMeta) * 100)
+                ? Math.round((vendidoMes / meta.valorMeta) * 100)
                 : 0,
           })),
-          vendido,
-          comissao,
+
+          metasAnuais: metasAnuais.map((meta) => ({
+            ...meta,
+            vendido: vendidoAno,
+            percentual:
+              meta.valorMeta > 0
+                ? Math.round((vendidoAno / meta.valorMeta) * 100)
+                : 0,
+          })),
+
+          vendidoMes,
+          comissaoMes,
         };
       });
 
     const totalVendido = colaboradoresData.reduce(
-      (sum, col) => sum + col.vendido,
+      (sum, col) => sum + col.vendidoMes,
       0
     );
-    const totalMeta = colaboradoresData.reduce(
-      (sum, col) => sum + col.metas.reduce((s, m) => s + m.valorMeta, 0),
+    const totalMetaMensal = colaboradoresData.reduce(
+      (sum, col) => sum + col.metasMensais.reduce((s, m) => s + m.valorMeta, 0),
       0
     );
     const totalComissao = colaboradoresData.reduce(
-      (sum, col) => sum + col.comissao,
+      (sum, col) => sum + col.comissaoMes,
       0
     );
-    const percentualGeral =
-      totalMeta > 0 ? Math.round((totalVendido / totalMeta) * 100) : 0;
+    const percentualGeralMensal =
+      totalMetaMensal > 0
+        ? Math.round((totalVendido / totalMetaMensal) * 100)
+        : 0;
 
     return {
       colaboradoresData,
-      totalMeta,
+      totalMetaMensal,
       totalVendido,
       totalComissao,
-      percentualGeral,
-      filteredVendas,
+      percentualGeralMensal,
+      filteredVendas: vendas.filter((v) => isDateInPeriod(v.data)),
     };
-  }, [vendas, metas, colaboradores, lojas, formasPagamento, isDateInPeriod]);
+  }, [
+    vendas,
+    metas,
+    colaboradores,
+    lojas,
+    formasPagamento,
+    isDateInPeriod,
+    filterMode,
+    simulationDate,
+    selectedPeriod,
+  ]);
 
   const getComissoesBaseadasEmVendas = useCallback(() => {
     const filteredVendas = vendas.filter((v) => isDateInPeriod(v.data));
@@ -316,21 +367,47 @@ export function DataProvider({ children }: { children: ReactNode }) {
         );
         if (vendasColaborador.length === 0) return null;
 
+        const loja = lojas.find((l) => l.id === colaborador.lojaId);
+        const colaboradorComLoja = {
+          ...colaborador,
+          equipe: loja?.nome || "Sem loja",
+        };
+
         const totalVendas = vendasColaborador.reduce(
           (total, v) => total + v.valor,
           0
         );
-        const totalComissao = vendasColaborador.reduce((total, venda) => {
-          const forma = formasPagamento.find(
-            (f) => f.codigo === venda.formaPagamento
-          );
-          return (
-            total + (forma ? (venda.valor * forma.percentualComissao) / 100 : 0)
-          );
-        }, 0);
+
+        const detalhesFormasPagamento = formasPagamento
+          .map((forma) => {
+            const vendasDaForma = vendasColaborador.filter(
+              (v) => v.formaPagamento === forma.codigo
+            );
+            const totalVendasForma = vendasDaForma.reduce(
+              (sum, v) => sum + v.valor,
+              0
+            );
+            const comissaoForma =
+              (totalVendasForma * forma.percentualComissao) / 100;
+            return {
+              formaPagamento: forma.nome,
+              quantidadeVendas: vendasDaForma.length,
+              totalVendas: totalVendasForma,
+              percentualComissao: forma.percentualComissao,
+              comissao: comissaoForma,
+            };
+          })
+          .filter((d) => d.quantidadeVendas > 0);
+
+        const totalComissao = detalhesFormasPagamento.reduce(
+          (sum, d) => sum + d.comissao,
+          0
+        );
 
         return {
-          colaborador,
+          colaborador: colaboradorComLoja,
+          vendas: vendasColaborador,
+          detalhesFormasPagamento,
           quantidadeVendas: vendasColaborador.length,
           totalVendas,
           totalComissao,
@@ -339,11 +416,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
       .filter(Boolean);
 
     const totalGeralComissoes = vendasPorColaborador.reduce(
-      (sum, d) => sum + d.totalComissao,
+      (sum, d) => sum + (d?.totalComissao ?? 0),
       0
     );
 
-    // CORREÇÃO: A lógica para calcular o resumo por forma de pagamento foi restaurada aqui
     const resumoPorForma = formasPagamento
       .map((forma) => {
         const vendasDaForma = filteredVendas.filter(
@@ -368,9 +444,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return {
       vendasPorColaborador,
       totalGeralComissoes,
-      resumoPorForma, // Adicionado de volta ao objeto de retorno
+      resumoPorForma,
     };
-  }, [vendas, colaboradores, formasPagamento, isDateInPeriod]);
+  }, [vendas, colaboradores, lojas, formasPagamento, isDateInPeriod]);
 
   const fecharMes = useCallback(() => {
     const periodoFechamento = getPreviousMonthPeriod();
@@ -378,7 +454,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
       v.data.startsWith(periodoFechamento)
     );
 
-    // 1. Concluir metas e criar recorrentes
+    if (vendasDoPeriodo.length === 0) {
+      toast({
+        title: "Nenhuma venda no mês anterior para fechar.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const novasMetas: Meta[] = [];
     const metasAtualizadas = metas.map((meta) => {
       if (meta.periodo === periodoFechamento && meta.status === "ativa") {
@@ -390,7 +473,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
           const proximoPeriodo = format(proximoPeriodoDate, "yyyy-MM");
           const novaMeta: Meta = {
             ...meta,
-            id: Math.max(...metas.map((m) => m.id), 0) + novasMetas.length + 1,
+            id:
+              Math.max(
+                ...metas.map((m) => m.id),
+                ...novasMetas.map((m) => m.id),
+                0
+              ) + 1,
             periodo: proximoPeriodo,
             status: "ativa",
           };
@@ -403,7 +491,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     setMetas([...metasAtualizadas, ...novasMetas]);
 
-    // 2. Calcular e registrar comissões pendentes
     const comissoesCalculadas: Comissao[] = [];
     colaboradores.forEach((col) => {
       const vendasColaborador = vendasDoPeriodo.filter(
@@ -429,9 +516,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (valorComissao > 0) {
           const novaComissao: Comissao = {
             id:
-              Math.max(...comissoes.map((c) => c.id), 0) +
-              comissoesCalculadas.length +
-              1,
+              Math.max(
+                ...comissoes.map((c) => c.id),
+                ...comissoesCalculadas.map((c) => c.id),
+                0
+              ) + 1,
             colaboradorId: col.id,
             periodo: periodoFechamento,
             valorComissao,

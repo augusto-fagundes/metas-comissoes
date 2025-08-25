@@ -47,6 +47,11 @@ export function PeriodFilterProvider({ children }: { children: ReactNode }) {
     const date = new Date(`${dateStr}T12:00:00`);
 
     if (filterMode === "live" || filterMode === "period") {
+      // Para metas anuais, comparamos apenas o ano
+      if (dateStr.length === 4) {
+        // é um ano, ex: "2024"
+        return dateStr === currentPeriod.substring(0, 4);
+      }
       return dateStr.startsWith(currentPeriod);
     }
     if (filterMode === "range" && dateRange?.from) {

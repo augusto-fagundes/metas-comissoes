@@ -28,7 +28,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { DollarSign, Check, X, Clock, Eye, Archive } from "lucide-react";
+import { DollarSign, Check, X, Clock, Eye } from "lucide-react";
 import { useData } from "@/contexts/data-context";
 import { useAuth } from "@/contexts/auth-context";
 import { FilterBar } from "@/components/filter-bar";
@@ -38,42 +38,7 @@ import { Comissao } from "@/data/mock-data";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
-/**
- * Card que aparece condicionalmente para permitir o fechamento do mês.
- */
-const MonthClosingCard = () => {
-  const { fecharMes } = useData();
-  const { getPreviousMonthPeriod } = usePeriodFilter();
-
-  const handleCloseMonth = () => {
-    fecharMes();
-  };
-
-  const previousMonthLabel = format(
-    new Date(`${getPreviousMonthPeriod()}-02`),
-    "MMMM 'de' yyyy",
-    { locale: ptBR }
-  );
-
-  return (
-    <Card className="bg-amber-50 border-amber-200">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-amber-900">
-          <Archive className="w-5 h-5" />
-          Fechamento de Mês Disponível
-        </CardTitle>
-        <CardDescription className="text-amber-800">
-          Existem vendas no período de <strong>{previousMonthLabel}</strong> que
-          ainda não foram processadas. Gere o fechamento para calcular as
-          comissões e enviá-las para aprovação.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Button onClick={handleCloseMonth}>Gerar Fechamento de Mês</Button>
-      </CardContent>
-    </Card>
-  );
-};
+// O componente de fechamento foi movido para seu próprio arquivo, então o removemos daqui.
 
 export function ComissoesPage() {
   const {
@@ -84,57 +49,41 @@ export function ComissoesPage() {
     aprovarComissao,
     rejeitarComissao,
     marcarComissaoPaga,
-    fecharMes,
   } = useData();
-  const {
-    getPeriodLabel,
-    getPreviousMonthPeriod,
-    selectedPeriod,
-    filterMode,
-    simulationDate,
-  } = usePeriodFilter();
+  const { getPeriodLabel, selectedPeriod, filterMode, simulationDate } =
+    usePeriodFilter();
   const { user } = useAuth();
 
   const [showApprovalModal, setShowApprovalModal] = useState(false);
-  const [selectedComissao, setSelectedComissao] = useState<Comissao | null>(
-    null
-  );
+  const [modalData, setModalData] = useState<any>(null);
   const [observacoes, setObservacoes] = useState("");
 
   const comissoesVendas = getComissoesBaseadasEmVendas();
 
-  // Lógica para exibir o card de fechamento
-  const monthToClose = useMemo(() => {
-    const prevMonth = getPreviousMonthPeriod();
-    const hasSalesInPrevMonth = vendas.some((v) =>
-      v.data.startsWith(prevMonth)
-    );
-    const isClosed = comissoes.some((c) => c.periodo === prevMonth);
-    return hasSalesInPrevMonth && !isClosed ? prevMonth : null;
-  }, [vendas, comissoes, getPreviousMonthPeriod]);
-
-  // CORREÇÃO: Lógica ajustada para filtrar corretamente os dados por período
   const allComissionsData = useMemo(() => {
     const periodToFilter =
       filterMode === "live"
         ? format(simulationDate, "yyyy-MM")
         : selectedPeriod;
 
-    // 1. Pega as comissões já processadas (Pendente, Aprovada, etc) APENAS do período selecionado
     const processedInPeriod = comissoes
       .filter((c) => c.periodo === periodToFilter)
-      .map((c) => ({
-        ...c,
-        colaborador: colaboradores.find((col) => col.id === c.colaboradorId),
-        isProcessed: true,
-        // Adiciona campos que faltam para a tabela funcionar
-        quantidadeVendas: c.detalhes.length, // Aproximação, pode ser melhorada
-        totalVendido: c.detalhes.reduce((sum, d) => sum + d.valor, 0),
-      }));
+      .map((c) => {
+        const vendasColaborador = vendas.filter(
+          (v) =>
+            v.colaboradorId === c.colaboradorId && v.data.startsWith(c.periodo)
+        );
+        return {
+          ...c,
+          colaborador: colaboradores.find((col) => col.id === c.colaboradorId),
+          isProcessed: true,
+          quantidadeVendas: vendasColaborador.length,
+          totalVendido: vendasColaborador.reduce((sum, v) => sum + v.valor, 0),
+          vendas: vendasColaborador,
+        };
+      });
 
-    // 2. Pega as comissões "Não Processadas" (cálculo em tempo real) do período selecionado
-    const notProcessedInPeriod = comissoesVendas.vendasPorColaborador
-      // Garante que não vamos mostrar um colaborador que já tem uma comissão processada neste mesmo período
+    const notProcessedInPeriod = (comissoesVendas.vendasPorColaborador || [])
       .filter(
         (v) =>
           !processedInPeriod.some((p) => p.colaboradorId === v.colaborador.id)
@@ -149,10 +98,10 @@ export function ComissoesPage() {
         totalVendido: v.totalVendas,
         status: "nao_processada",
         isProcessed: false,
-        detalhes: [], // Não temos detalhes profundos para comissões não processadas
+        detalhes: v.detalhesFormasPagamento,
+        vendas: v.vendas,
       }));
 
-    // 3. Retorna a combinação dos dois, agora corretamente filtrada
     return [...processedInPeriod, ...notProcessedInPeriod];
   }, [
     comissoes,
@@ -161,7 +110,42 @@ export function ComissoesPage() {
     selectedPeriod,
     filterMode,
     simulationDate,
+    vendas,
   ]);
+
+  const handleOpenModal = (data: any) => {
+    setModalData(data);
+    setObservacoes(data.observacoes || "");
+    setShowApprovalModal(true);
+  };
+
+  const handleApprove = () => {
+    if (modalData) {
+      aprovarComissao(modalData.id, user!.id, observacoes);
+      toast({ title: "Comissão aprovada!" });
+      setShowApprovalModal(false);
+    }
+  };
+
+  const handleReject = () => {
+    if (modalData) {
+      if (!observacoes.trim()) {
+        toast({
+          title: "Observação é obrigatória para rejeitar.",
+          variant: "destructive",
+        });
+        return;
+      }
+      rejeitarComissao(modalData.id, user!.id, observacoes);
+      toast({ title: "Comissão rejeitada!" });
+      setShowApprovalModal(false);
+    }
+  };
+
+  const handleMarkAsPaid = (comissaoId: number) => {
+    marcarComissaoPaga(comissaoId);
+    toast({ title: "Comissão marcada como paga!" });
+  };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -200,40 +184,6 @@ export function ComissoesPage() {
     }
   };
 
-  const handleReview = (comissao: Comissao) => {
-    setSelectedComissao(comissao);
-    setObservacoes(comissao.observacoes || "");
-    setShowApprovalModal(true);
-  };
-
-  const handleApprove = () => {
-    if (selectedComissao) {
-      aprovarComissao(selectedComissao.id, user!.id, observacoes);
-      toast({ title: "Comissão aprovada!" });
-      setShowApprovalModal(false);
-    }
-  };
-
-  const handleReject = () => {
-    if (selectedComissao) {
-      if (!observacoes.trim()) {
-        toast({
-          title: "Observação é obrigatória para rejeitar.",
-          variant: "destructive",
-        });
-        return;
-      }
-      rejeitarComissao(selectedComissao.id, user!.id, observacoes);
-      toast({ title: "Comissão rejeitada!" });
-      setShowApprovalModal(false);
-    }
-  };
-
-  const handleMarkAsPaid = (comissaoId: number) => {
-    marcarComissaoPaga(comissaoId);
-    toast({ title: "Comissão marcada como paga!" });
-  };
-
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -245,8 +195,7 @@ export function ComissoesPage() {
         </div>
       </div>
 
-      {user?.tipo === "admin" && monthToClose && <MonthClosingCard />}
-
+      {/* O card e a lógica de fechamento foram movidos para a FilterBar */}
       <FilterBar />
 
       <Card>
@@ -310,12 +259,19 @@ export function ComissoesPage() {
                     <TableCell>{getStatusBadge(item.status)}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex space-x-2 justify-end">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleOpenModal(item)}
+                        >
+                          <Eye className="w-4 h-4 mr-1" /> Detalhes
+                        </Button>
                         {item.status === "pendente" &&
                           user?.tipo === "admin" && (
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => handleReview(item as Comissao)}
+                              onClick={() => handleOpenModal(item)}
                             >
                               Revisar
                             </Button>
@@ -332,15 +288,6 @@ export function ComissoesPage() {
                               Marcar como Paga
                             </Button>
                           )}
-                        {item.isProcessed && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleReview(item as Comissao)}
-                          >
-                            Detalhes
-                          </Button>
-                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -351,24 +298,18 @@ export function ComissoesPage() {
         </CardContent>
       </Card>
 
-      {selectedComissao && (
+      {modalData && (
         <Dialog open={showApprovalModal} onOpenChange={setShowApprovalModal}>
-          <DialogContent>
+          <DialogContent className="max-w-3xl">
             <DialogHeader>
-              <DialogTitle>Revisar Comissão</DialogTitle>
+              <DialogTitle>Detalhes da Comissão</DialogTitle>
               <DialogDescription>
                 Analise os detalhes da comissão de{" "}
-                <strong>
-                  {
-                    colaboradores.find(
-                      (c) => c.id === selectedComissao.colaboradorId
-                    )?.nome
-                  }
-                </strong>{" "}
-                para o período de <strong>{selectedComissao.periodo}</strong>.
+                <strong>{modalData.colaborador.nome}</strong> para o período de{" "}
+                <strong>{modalData.periodo}</strong>.
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4 py-4">
+            <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto pr-2">
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label className="text-sm text-muted-foreground">
@@ -376,7 +317,7 @@ export function ComissoesPage() {
                   </Label>
                   <p className="font-bold text-lg text-green-600">
                     R${" "}
-                    {selectedComissao.valorComissao.toLocaleString("pt-BR", {
+                    {modalData.valorComissao.toLocaleString("pt-BR", {
                       minimumFractionDigits: 2,
                     })}
                   </p>
@@ -385,7 +326,7 @@ export function ComissoesPage() {
                   <Label className="text-sm text-muted-foreground">
                     Status Atual
                   </Label>
-                  <div>{getStatusBadge(selectedComissao.status)}</div>
+                  <div>{getStatusBadge(modalData.status)}</div>
                 </div>
               </div>
               <div>
@@ -396,17 +337,17 @@ export function ComissoesPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Forma</TableHead>
-                      <TableHead>Valor Vendido</TableHead>
+                      <TableHead>Total Vendido</TableHead>
                       <TableHead>Comissão</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {selectedComissao.detalhes.map((d, i) => (
+                    {modalData.detalhes.map((d, i) => (
                       <TableRow key={i}>
                         <TableCell>{d.formaPagamento}</TableCell>
                         <TableCell>
                           R${" "}
-                          {d.valor.toLocaleString("pt-BR", {
+                          {d.totalVendas?.toLocaleString("pt-BR", {
                             minimumFractionDigits: 2,
                           })}
                         </TableCell>
@@ -422,42 +363,70 @@ export function ComissoesPage() {
                 </Table>
               </div>
               <div>
+                <Label className="text-sm text-muted-foreground">
+                  Vendas Realizadas no Período ({modalData.quantidadeVendas})
+                </Label>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Data</TableHead>
+                      <TableHead>Cliente</TableHead>
+                      <TableHead className="text-right">Valor</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {modalData.vendas.map((v) => (
+                      <TableRow key={v.id}>
+                        <TableCell>
+                          {format(new Date(`${v.data}T12:00:00`), "dd/MM/yyyy")}
+                        </TableCell>
+                        <TableCell>{v.cliente}</TableCell>
+                        <TableCell className="text-right">
+                          R${" "}
+                          {v.valor.toLocaleString("pt-BR", {
+                            minimumFractionDigits: 2,
+                          })}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              <div>
                 <Label htmlFor="observacoes">Observações</Label>
                 <Textarea
                   id="observacoes"
                   value={observacoes}
                   onChange={(e) => setObservacoes(e.target.value)}
-                  placeholder="Adicione observações..."
+                  placeholder="Adicione observações para aprovar ou rejeitar..."
                   rows={3}
                   disabled={
-                    selectedComissao.status !== "pendente" ||
-                    user?.tipo !== "admin"
+                    modalData.status !== "pendente" || user?.tipo !== "admin"
                   }
                 />
               </div>
             </div>
 
-            <div className="flex justify-end space-x-2">
+            <DialogFooter>
               <Button
                 variant="outline"
                 onClick={() => setShowApprovalModal(false)}
               >
                 Fechar
               </Button>
-              {selectedComissao.status === "pendente" &&
-                user?.tipo === "admin" && (
-                  <>
-                    <Button variant="destructive" onClick={handleReject}>
-                      <X className="w-4 h-4 mr-2" />
-                      Rejeitar
-                    </Button>
-                    <Button onClick={handleApprove}>
-                      <Check className="w-4 h-4 mr-2" />
-                      Aprovar
-                    </Button>
-                  </>
-                )}
-            </div>
+              {modalData.status === "pendente" && user?.tipo === "admin" && (
+                <>
+                  <Button variant="destructive" onClick={handleReject}>
+                    <X className="w-4 h-4 mr-2" />
+                    Rejeitar
+                  </Button>
+                  <Button onClick={handleApprove}>
+                    <Check className="w-4 h-4 mr-2" />
+                    Aprovar
+                  </Button>
+                </>
+              )}
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       )}

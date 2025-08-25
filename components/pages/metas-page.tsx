@@ -79,14 +79,13 @@ export function MetasPage() {
       descricao: formData.descricao,
       tipo: formData.tipo,
       recorrente: formData.tipo === "mensal" ? formData.recorrente : false,
-      status: "ativa" as const,
     };
 
     if (editingMeta) {
-      updateMeta({ ...editingMeta, ...metaData });
+      updateMeta({ ...editingMeta, ...metaData, status: editingMeta.status });
       toast({ title: "Meta atualizada!" });
     } else {
-      addMeta(metaData);
+      addMeta(metaData as any);
       toast({ title: "Meta criada!" });
     }
 

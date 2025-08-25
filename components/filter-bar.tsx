@@ -27,6 +27,9 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { usePeriodFilter } from "@/contexts/period-filter-context";
 import { useData } from "@/contexts/data-context";
+import { useAuth } from "@/contexts/auth-context";
+// 1. Importe o novo componente que acabamos de criar
+import { MonthClosing } from "@/components/month-closing";
 
 export function FilterBar() {
   const {
@@ -34,13 +37,11 @@ export function FilterBar() {
     setFilterMode,
     selectedPeriod,
     setSelectedPeriod,
-    dateRange,
-    setDateRange,
-    getPeriodLabel,
     simulationDate,
     setSimulationDate,
   } = usePeriodFilter();
   const { vendas, metas } = useData();
+  const { isAdmin } = useAuth();
 
   const periods = React.useMemo(() => {
     const periodSet = new Set<string>();
@@ -107,6 +108,9 @@ export function FilterBar() {
               </SelectContent>
             </Select>
           )}
+
+          {/* 2. O botão de fechamento agora é renderizado pelo nosso componente inteligente */}
+          {isAdmin() && <MonthClosing />}
         </div>
 
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
