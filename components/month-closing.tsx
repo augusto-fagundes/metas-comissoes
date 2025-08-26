@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import {
   Accordion,
   AccordionContent,
@@ -48,6 +49,11 @@ export function MonthClosing() {
   const { getPreviousMonthPeriod, setFilterMode, setSelectedPeriod } =
     usePeriodFilter();
   const [open, setOpen] = useState(false);
+
+  // Estado para armazenar os novos valores das metas editadas
+  const [novosValoresMetas, setNovosValoresMetas] = useState<{
+    [metaId: number]: number;
+  }>({});
 
   const monthToClose = useMemo(() => {
     const prevMonth = getPreviousMonthPeriod();
@@ -116,9 +122,17 @@ export function MonthClosing() {
     return { totalVendido, comissoesGeradas, totalComissoes, metasRecorrentes };
   }, [monthToClose, vendas, metas, colaboradores, formasPagamento]);
 
+  // Limpa os valores editados sempre que o modal for aberto
+  useEffect(() => {
+    if (open) {
+      setNovosValoresMetas({});
+    }
+  }, [open]);
+
   const handleConfirmClosing = () => {
     const previousMonthPeriod = getPreviousMonthPeriod();
-    const { novasComissoes, metasAtualizadas } = fecharMes();
+    // Passa os novos valores para a função fecharMes
+    const { novasComissoes, metasAtualizadas } = fecharMes(novosValoresMetas);
 
     setComissoes(novasComissoes);
     setMetas(metasAtualizadas);
@@ -126,6 +140,15 @@ export function MonthClosing() {
     setFilterMode("period");
     setSelectedPeriod(previousMonthPeriod);
     setOpen(false);
+  };
+
+  // Função para lidar com a mudança no input de meta
+  const handleMetaValueChange = (metaId: number, value: string) => {
+    const numericValue = parseFloat(value);
+    setNovosValoresMetas((prev) => ({
+      ...prev,
+      [metaId]: isNaN(numericValue) ? 0 : numericValue,
+    }));
   };
 
   if (!monthToClose || !closingData) {
@@ -262,18 +285,44 @@ export function MonthClosing() {
                 <Repeat className="w-5 h-5" />
                 Metas Recorrentes a Renovar
               </Label>
-              <div className="mt-2 border rounded-md p-4">
+              <p className="text-sm text-muted-foreground mt-1 mb-3">
+                Ajuste os valores das metas para o próximo período, se
+                necessário.
+              </p>
+              <div className="space-y-3">
                 {closingData.metasRecorrentes.map((meta) => (
-                  <div key={meta.id} className="text-sm text-muted-foreground">
-                    - A meta de{" "}
-                    <strong>R$ {meta.valorMeta.toLocaleString()}</strong> para{" "}
-                    <strong>
-                      {
-                        colaboradores.find((c) => c.id === meta.colaboradorId)
-                          ?.nome
-                      }
-                    </strong>{" "}
-                    será recriada para o próximo mês.
+                  <div
+                    key={meta.id}
+                    className="grid grid-cols-3 items-center gap-4 p-3 border rounded-md"
+                  >
+                    <div className="col-span-1">
+                      <p className="font-medium text-sm">
+                        {
+                          colaboradores.find((c) => c.id === meta.colaboradorId)
+                            ?.nome
+                        }
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Meta atual: R$ {meta.valorMeta.toLocaleString()}
+                      </p>
+                    </div>
+                    <div className="col-span-2">
+                      <Label
+                        htmlFor={`meta-${meta.id}`}
+                        className="text-xs font-semibold"
+                      >
+                        Novo valor para o próximo mês
+                      </Label>
+                      <Input
+                        id={`meta-${meta.id}`}
+                        type="number"
+                        placeholder={meta.valorMeta.toString()}
+                        onChange={(e) =>
+                          handleMetaValueChange(meta.id, e.target.value)
+                        }
+                        className="mt-1"
+                      />
+                    </div>
                   </div>
                 ))}
               </div>
