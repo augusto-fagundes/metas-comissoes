@@ -7,6 +7,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  CardFooter,
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -23,7 +24,14 @@ import {
   Pie,
   Cell,
 } from "recharts";
-import { Target, TrendingUp, Users, DollarSign, Building } from "lucide-react";
+import {
+  Target,
+  TrendingUp,
+  Users,
+  DollarSign,
+  Building,
+  Percent,
+} from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { useData } from "@/contexts/data-context";
 import { FilterBar } from "@/components/filter-bar";
@@ -38,53 +46,29 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { PeriodComparison } from "@/components/period-comparison";
+import { cn } from "@/lib/utils";
 
-const getStatusColor = (percentual: number) => {
-  if (percentual >= 100) return "bg-green-500";
-  if (percentual >= 80) return "bg-yellow-500";
-  return "bg-red-500";
+const getStatusColorClass = (percentual: number) => {
+  if (percentual >= 100) return "text-green-500";
+  if (percentual >= 80) return "text-yellow-500";
+  return "text-red-500";
 };
 
-// Componente para exibir um card de meta individual (mensal ou anual)
-const MetaCard = ({ meta, title }) => (
-  <div className="p-4 border rounded-lg bg-gray-50/50">
-    <div className="flex justify-between items-center mb-2">
-      <h4 className="font-semibold">{title}</h4>
-      <span className="text-xs text-muted-foreground">{meta.periodo}</span>
-    </div>
-    <p className="text-xs text-muted-foreground mb-3">{meta.descricao}</p>
-    <Progress value={meta.percentual} className="h-2 mb-1" />
-    <div className="flex justify-between text-xs">
-      <span>R$ {meta.vendido.toLocaleString()}</span>
-      <span className="text-muted-foreground">
-        de R$ {meta.valorMeta.toLocaleString()}
-      </span>
-    </div>
-    <p className="text-right text-lg font-bold text-blue-600 mt-2">
-      {meta.percentual}%
-    </p>
-  </div>
-);
-
-// Componente para exibir o perfil e as metas de um colaborador
+// NOVO Componente para exibir o perfil e as metas de um colaborador
 const ColaboradorPerformanceCard = ({ colaborador }) => {
-  const totalMetaMensal = colaborador.metasMensais.reduce(
-    (sum, m) => sum + m.valorMeta,
-    0
-  );
-  const percentualGeralMensal =
-    totalMetaMensal > 0
-      ? Math.round((colaborador.vendidoMes / totalMetaMensal) * 100)
-      : 0;
+  // Assumindo uma meta mensal principal por colaborador para simplificar a UI
+  const metaMensalPrincipal = colaborador.metasMensais?.[0] || {
+    percentual: 0,
+    vendido: 0,
+    valorMeta: 0,
+    descricao: "Nenhuma meta mensal definida",
+  };
+
+  const statusColor = getStatusColorClass(metaMensalPrincipal.percentual);
 
   return (
-    <div className="flex items-start justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors gap-4">
-      <div className="flex items-start space-x-4 flex-1">
-        <div
-          className={`mt-1 w-3 h-3 rounded-full ${getStatusColor(
-            percentualGeralMensal
-          )} flex-shrink-0`}
-        ></div>
+    <Card className="flex flex-col">
+      <CardHeader className="flex flex-row items-start gap-4 space-y-0">
         <Avatar className="h-12 w-12 flex-shrink-0">
           <AvatarImage
             src={colaborador.foto || "/placeholder.svg"}
@@ -98,31 +82,42 @@ const ColaboradorPerformanceCard = ({ colaborador }) => {
           </AvatarFallback>
         </Avatar>
         <div className="flex-1">
-          <div className="font-medium">{colaborador.nome}</div>
-          <div className="text-sm text-gray-500">
+          <CardTitle>{colaborador.nome}</CardTitle>
+          <CardDescription>
             {colaborador.cargo} • {colaborador.equipe}
+          </CardDescription>
+        </div>
+      </CardHeader>
+      <CardContent className="flex-grow space-y-4">
+        <div>
+          <Label className="text-xs">{metaMensalPrincipal.descricao}</Label>
+          <div className="flex justify-between text-sm text-muted-foreground mt-1">
+            <span>R$ {metaMensalPrincipal.vendido.toLocaleString()}</span>
+            <span>
+              Meta: R$ {metaMensalPrincipal.valorMeta.toLocaleString()}
+            </span>
           </div>
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-            {colaborador.metasMensais.map((meta) => (
-              <MetaCard key={meta.id} meta={meta} title="Meta Mensal" />
-            ))}
-            {colaborador.metasAnuais.map((meta) => (
-              <MetaCard key={meta.id} meta={meta} title="Meta Anual" />
-            ))}
-          </div>
+          <Progress
+            value={metaMensalPrincipal.percentual}
+            className="h-2 mt-1"
+          />
         </div>
-      </div>
-      <div className="text-right flex-shrink-0 w-40">
-        <div className="text-sm font-medium">Vendido no Mês</div>
-        <div className="text-xl font-bold text-green-600">
-          R$ {colaborador.vendidoMes.toLocaleString()}
+      </CardContent>
+      <CardFooter className="grid grid-cols-2 gap-4 text-center">
+        <div className="space-y-1 rounded-md border p-2">
+          <p className="text-xs text-muted-foreground">Meta Atingida</p>
+          <p className={cn("text-2xl font-bold", statusColor)}>
+            {metaMensalPrincipal.percentual}%
+          </p>
         </div>
-        <div className="text-sm font-medium mt-4">Comissão do Mês</div>
-        <div className="text-xl font-bold text-blue-600">
-          R$ {colaborador.comissaoMes.toLocaleString()}
+        <div className="space-y-1 rounded-md border p-2">
+          <p className="text-xs text-muted-foreground">Comissão (Mês)</p>
+          <p className="text-2xl font-bold text-blue-600">
+            R$ {colaborador.comissaoMes.toLocaleString()}
+          </p>
         </div>
-      </div>
-    </div>
+      </CardFooter>
+    </Card>
   );
 };
 
@@ -149,8 +144,28 @@ const EquipePerformanceCard = ({ equipeData }) => {
         </div>
         {metaMensal && (
           <div>
-            <Label>Meta Mensal da Equipe</Label> <br />
-            <MetaCard meta={metaMensal} title="Meta da Equipe" />
+            <Label>Meta Mensal da Equipe</Label>
+            <div className="p-4 border rounded-lg bg-gray-50/50 mt-2">
+              <div className="flex justify-between items-center mb-2">
+                <h4 className="font-semibold">Meta da Equipe</h4>
+                <span className="text-xs text-muted-foreground">
+                  {metaMensal.periodo}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground mb-3">
+                {metaMensal.descricao}
+              </p>
+              <Progress value={metaMensal.percentual} className="h-2 mb-1" />
+              <div className="flex justify-between text-xs">
+                <span>R$ {metaMensal.vendido.toLocaleString()}</span>
+                <span className="text-muted-foreground">
+                  de R$ {metaMensal.valorMeta.toLocaleString()}
+                </span>
+              </div>
+              <p className="text-right text-lg font-bold text-blue-600 mt-2">
+                {metaMensal.percentual}%
+              </p>
+            </div>
           </div>
         )}
         {!metaMensal && (
@@ -216,7 +231,7 @@ export function DashboardPage() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold">Dashboard</h1>
+          <h1 className="text-3xl font-bold">Home</h1>
           <p className="text-gray-600">Visão geral do desempenho da equipe</p>
         </div>
       </div>
@@ -295,7 +310,6 @@ export function DashboardPage() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* GRÁFICO 1: Desempenho por Vendedor (Meta vs Vendido) */}
             <Card>
               <CardHeader>
                 <CardTitle>Desempenho por Vendedor (Mês)</CardTitle>
@@ -329,7 +343,6 @@ export function DashboardPage() {
                 </ResponsiveContainer>
               </CardContent>
             </Card>
-            {/* GRÁFICO 2: Vendas x Meta Geral (com filtro) */}
             <Card>
               <CardHeader>
                 <div className="flex justify-between items-center">
@@ -387,7 +400,6 @@ export function DashboardPage() {
                       formatter={(value) => `R$ ${value.toLocaleString()}`}
                     />
                     <Legend />
-                    {/* Texto no centro do gráfico */}
                     <text
                       x="50%"
                       y="48%"
@@ -423,7 +435,7 @@ export function DashboardPage() {
                 Performance individual da equipe no período selecionado.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               {dashboardData.colaboradoresData.map((colaborador) => (
                 <ColaboradorPerformanceCard
                   key={colaborador.id}
