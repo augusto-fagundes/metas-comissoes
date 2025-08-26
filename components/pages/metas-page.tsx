@@ -1,7 +1,7 @@
 "use client";
 
 import type React from "react";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   Card,
   CardContent,
@@ -44,10 +44,14 @@ import { useData } from "@/contexts/data-context";
 import { toast } from "@/hooks/use-toast";
 import { CommissionInfoPanel } from "@/components/commission-info-panel";
 import { Meta } from "@/data/mock-data";
+import { usePeriodFilter } from "@/contexts/period-filter-context";
+import { FilterBar } from "@/components/filter-bar"; // IMPORTAÇÃO ADICIONADA
 
 export function MetasPage() {
   const { metas, colaboradores, lojas, addMeta, updateMeta, deleteMeta } =
     useData();
+  const { isDateInPeriod, selectedPeriod, filterMode } = usePeriodFilter();
+
   const [showDialog, setShowDialog] = useState(false);
   const [editingMeta, setEditingMeta] = useState<Meta | null>(null);
 
@@ -55,7 +59,7 @@ export function MetasPage() {
     "individual"
   );
   const [formData, setFormData] = useState({
-    targetId: "", // Pode ser colaboradorId ou lojaId
+    targetId: "",
     periodo: "",
     valorMeta: "",
     descricao: "",
@@ -63,10 +67,18 @@ export function MetasPage() {
     recorrente: false,
   });
 
+  const filteredMetas = useMemo(() => {
+    return metas.filter((meta) => isDateInPeriod(meta.periodo));
+  }, [metas, isDateInPeriod]);
+
   const resetForm = () => {
+    const defaultPeriod =
+      filterMode === "period"
+        ? selectedPeriod
+        : new Date().toISOString().slice(0, 7);
     setFormData({
       targetId: "",
-      periodo: "",
+      periodo: defaultPeriod,
       valorMeta: "",
       descricao: "",
       tipo: "mensal",
@@ -149,12 +161,6 @@ export function MetasPage() {
     }
   };
 
-  const metasAtivas = metas.filter((m) => m.status === "ativa");
-  const totalMetasValor = metasAtivas.reduce(
-    (sum, meta) => sum + meta.valorMeta,
-    0
-  );
-
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -182,10 +188,10 @@ export function MetasPage() {
                   value={targetType}
                   onValueChange={(value) => {
                     setTargetType(value as any);
-                    setFormData((f) => ({ ...f, targetId: "" })); // Limpa a seleção ao trocar o tipo
+                    setFormData((f) => ({ ...f, targetId: "" }));
                   }}
                   className="flex gap-4"
-                  disabled={!!editingMeta} // Desabilita a troca se estiver a editar
+                  disabled={!!editingMeta}
                 >
                   <div className="flex items-center space-x-2">
                     <RadioGroupItem value="individual" id="individual" />
@@ -207,7 +213,7 @@ export function MetasPage() {
                   onValueChange={(value) =>
                     setFormData({ ...formData, targetId: value })
                   }
-                  disabled={!!editingMeta} // Desabilita a troca se estiver a editar
+                  disabled={!!editingMeta}
                 >
                   <SelectTrigger>
                     <SelectValue
@@ -329,14 +335,15 @@ export function MetasPage() {
         </Dialog>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        {/* ... Cards de Resumo ... */}
-      </div>
+      {/* BARRA DE FILTRO ADICIONADA AQUI */}
+      <FilterBar />
 
       <Card>
         <CardHeader>
           <CardTitle>Lista de Metas</CardTitle>
-          <CardDescription>Gerencie todas as metas definidas</CardDescription>
+          <CardDescription>
+            Gerencie todas as metas definidas para o período selecionado
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
@@ -351,40 +358,48 @@ export function MetasPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {metas.map((meta) => (
-                <TableRow key={meta.id}>
-                  <TableCell className="font-medium">
-                    {getTargetName(meta)}
-                  </TableCell>
-                  <TableCell>{meta.periodo}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className="capitalize">
-                      {meta.lojaId ? "Equipe" : "Individual"}
-                      {meta.recorrente ? " (R)" : ""}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>R$ {meta.valorMeta.toLocaleString()}</TableCell>
-                  <TableCell>{getStatusBadge(meta.status)}</TableCell>
-                  <TableCell>
-                    <div className="flex space-x-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleEdit(meta)}
-                      >
-                        <Edit className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleDelete(meta.id)}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
+              {filteredMetas.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="h-24 text-center">
+                    Nenhuma meta encontrada para este período.
                   </TableCell>
                 </TableRow>
-              ))}
+              ) : (
+                filteredMetas.map((meta) => (
+                  <TableRow key={meta.id}>
+                    <TableCell className="font-medium">
+                      {getTargetName(meta)}
+                    </TableCell>
+                    <TableCell>{meta.periodo}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="capitalize">
+                        {meta.lojaId ? "Equipe" : "Individual"}
+                        {meta.recorrente ? " (R)" : ""}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>R$ {meta.valorMeta.toLocaleString()}</TableCell>
+                    <TableCell>{getStatusBadge(meta.status)}</TableCell>
+                    <TableCell>
+                      <div className="flex space-x-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEdit(meta)}
+                        >
+                          <Edit className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDelete(meta.id)}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
             </TableBody>
           </Table>
         </CardContent>
