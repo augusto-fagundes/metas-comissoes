@@ -1,25 +1,36 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { LayoutDashboard, Users, Target, ShoppingCart, Settings, Bell, DollarSign, LogOut, Menu, X } from "lucide-react"
-import { useAuth } from "@/contexts/auth-context"
-import { useData } from "@/contexts/data-context"
+import { useState } from "react";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  LayoutDashboard,
+  Users,
+  Target,
+  ShoppingCart,
+  Settings,
+  Bell,
+  DollarSign,
+  LogOut,
+  Menu,
+  X,
+} from "lucide-react";
+import { useAuth } from "@/contexts/auth-context";
+import { useData } from "@/contexts/data-context";
 
 interface SidebarProps {
-  activeTab: string
-  onTabChange: (tab: string) => void
+  activeTab: string;
+  onTabChange: (tab: string) => void;
 }
 
 export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
-  const { user, logout, isAdmin } = useAuth()
-  const { notificacoesAtivas } = useData()
-  const [isCollapsed, setIsCollapsed] = useState(false)
+  const { user, logout, isAdmin } = useAuth();
+  const { notificacoesAtivas } = useData();
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
-  const notificacoesNaoLidas = notificacoesAtivas.filter((n) => !n.lida).length
+  const notificacoesNaoLidas = notificacoesAtivas.filter((n) => !n.lida).length;
 
   const menuItems = [
     {
@@ -65,15 +76,15 @@ export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
       icon: Settings,
       show: isAdmin(),
     },
-  ]
+  ];
 
-  const visibleItems = menuItems.filter((item) => item.show)
+  const visibleItems = menuItems.filter((item) => item.show);
 
   return (
     <div
       className={cn(
         "bg-white border-r border-gray-200 flex flex-col transition-all duration-300",
-        isCollapsed ? "w-16" : "w-64",
+        isCollapsed ? "w-16" : "w-64"
       )}
     >
       {/* Header */}
@@ -81,12 +92,23 @@ export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
         <div className="flex items-center justify-between">
           {!isCollapsed && (
             <div>
-              <h1 className="text-xl font-bold text-gray-900">Meta & Comissões</h1>
+              <h1 className="text-xl font-bold text-gray-900">
+                Meta & Comissões
+              </h1>
               <p className="text-sm text-gray-500">Sistema de Gestão</p>
             </div>
           )}
-          <Button variant="ghost" size="sm" onClick={() => setIsCollapsed(!isCollapsed)} className="ml-auto">
-            {isCollapsed ? <Menu className="w-4 h-4" /> : <X className="w-4 h-4" />}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            className="ml-auto"
+          >
+            {isCollapsed ? (
+              <Menu className="w-4 h-4" />
+            ) : (
+              <X className="w-4 h-4" />
+            )}
           </Button>
         </div>
       </div>
@@ -105,7 +127,9 @@ export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
           </Avatar>
           {!isCollapsed && (
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-gray-900 truncate">{user?.nome}</p>
+              <p className="text-sm font-medium text-gray-900 truncate">
+                {user?.nome}
+              </p>
               <p className="text-xs text-gray-500 truncate">
                 {user?.tipo === "admin" ? "Administrador" : "Colaborador"}
               </p>
@@ -117,8 +141,8 @@ export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
       {/* Navigation */}
       <nav className="flex-1 p-4 space-y-2">
         {visibleItems.map((item) => {
-          const Icon = item.icon
-          const isActive = activeTab === item.id
+          const Icon = item.icon;
+          const isActive = activeTab === item.id;
 
           return (
             <Button
@@ -127,7 +151,7 @@ export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
               className={cn(
                 "w-full justify-start",
                 isCollapsed && "justify-center px-2",
-                isActive && "bg-blue-600 text-white hover:bg-blue-700",
+                isActive && "bg-blue-600 text-white hover:bg-blue-700"
               )}
               onClick={() => onTabChange(item.id)}
             >
@@ -136,7 +160,10 @@ export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
                 <>
                   <span>{item.label}</span>
                   {item.badge && (
-                    <Badge className="ml-auto bg-red-500 text-white text-xs" variant="secondary">
+                    <Badge
+                      className="ml-auto bg-red-500 text-white text-xs"
+                      variant="secondary"
+                    >
                       {item.badge}
                     </Badge>
                   )}
@@ -148,7 +175,7 @@ export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
                 </Badge>
               )}
             </Button>
-          )
+          );
         })}
       </nav>
 
@@ -158,7 +185,7 @@ export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
           variant="ghost"
           className={cn(
             "w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50",
-            isCollapsed && "justify-center px-2",
+            isCollapsed && "justify-center px-2"
           )}
           onClick={logout}
         >
@@ -167,5 +194,5 @@ export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
         </Button>
       </div>
     </div>
-  )
+  );
 }

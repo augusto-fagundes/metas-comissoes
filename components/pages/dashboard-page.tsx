@@ -16,7 +16,6 @@ import {
   Bar,
   XAxis,
   YAxis,
-  CartesianGrid,
   Tooltip,
   ResponsiveContainer,
   Legend,
@@ -24,15 +23,7 @@ import {
   Pie,
   Cell,
 } from "recharts";
-import {
-  Target,
-  TrendingUp,
-  Users,
-  DollarSign,
-  Building,
-  Store,
-} from "lucide-react";
-import { useAuth } from "@/contexts/auth-context";
+import { Target, TrendingUp, Users, DollarSign, Store } from "lucide-react";
 import { useData } from "@/contexts/data-context";
 import { FilterBar } from "@/components/filter-bar";
 import { usePeriodFilter } from "@/contexts/period-filter-context";
@@ -47,6 +38,7 @@ import { PeriodComparison } from "@/components/period-comparison";
 import { cn } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 const getStatusColorClass = (percentual: number) => {
   if (percentual >= 100) return "text-green-500";
@@ -55,7 +47,7 @@ const getStatusColorClass = (percentual: number) => {
 };
 
 // Componente para exibir o perfil e as metas de um colaborador
-const ColaboradorPerformanceCard = ({ colaborador }) => {
+const ColaboradorPerformanceCard = ({ colaborador }: { colaborador: any }) => {
   const metaMensalPrincipal = colaborador.metasMensais?.[0] || {
     percentual: 0,
     vendido: 0,
@@ -77,7 +69,7 @@ const ColaboradorPerformanceCard = ({ colaborador }) => {
           <AvatarFallback>
             {colaborador.nome
               .split(" ")
-              .map((n) => n[0])
+              .map((n: string) => n[0])
               .join("")}
           </AvatarFallback>
         </Avatar>
@@ -143,10 +135,13 @@ const PIE_COLORS = {
   faltante: "#e5e7eb", // Cinza
 };
 
+const CHART_COLORS = ["#10b981", "#3b82f6", "#f97316", "#8b5cf6", "#ef4444"];
+
 export function DashboardPage() {
-  const { getDashboardData, lojas } = useData();
+  const { getDashboardData, lojas, colaboradores } = useData();
   const { getPeriodLabel } = usePeriodFilter();
   const [lojaSelecionadaId, setLojaSelecionadaId] = useState<string>("todas");
+  const [annualView, setAnnualView] = useState("geral"); // 'geral' ou 'timeline'
 
   const dashboardData = getDashboardData();
 
@@ -162,23 +157,25 @@ export function DashboardPage() {
 
     const idLoja = parseInt(lojaSelecionadaId, 10);
     const dadosEquipe = dashboardData.desempenhoPorEquipe.find(
-      (e) => e.loja.id === idLoja
+      (e: any) => e.loja.id === idLoja
     );
     if (!dadosEquipe) return null;
 
     const colaboradoresDaLoja = dashboardData.colaboradoresData.filter(
-      (c) => c.equipe === dadosEquipe.loja.nome
+      (c: any) => c.equipe === dadosEquipe.loja.nome
     );
     const totalComissaoLoja = colaboradoresDaLoja.reduce(
-      (sum, col) => sum + col.comissaoMes,
+      (sum: number, col: any) => sum + col.comissaoMes,
       0
     );
     const totalVendidoAnoLoja = colaboradoresDaLoja.reduce(
-      (sum, col) => sum + col.metasAnuais.reduce((s, m) => s + m.vendido, 0),
+      (sum: number, col: any) =>
+        sum + col.metasAnuais.reduce((s: number, m: any) => s + m.vendido, 0),
       0
     );
     const totalMetaAnualLoja = colaboradoresDaLoja.reduce(
-      (sum, col) => sum + col.metasAnuais.reduce((s, m) => s + m.valorMeta, 0),
+      (sum: number, col: any) =>
+        sum + col.metasAnuais.reduce((s: number, m: any) => s + m.valorMeta, 0),
       0
     );
 
@@ -190,14 +187,15 @@ export function DashboardPage() {
       totalComissao: totalComissaoLoja,
       colaboradoresData: colaboradoresDaLoja,
       performancePeriodoSelecionado:
-        dashboardData.performancePeriodoSelecionado.filter((p) =>
-          colaboradoresDaLoja.some((c) => c.nome.startsWith(p.name))
+        dashboardData.performancePeriodoSelecionado.filter((p: any) =>
+          colaboradoresDaLoja.some((c: any) => c.nome.startsWith(p.name))
         ),
       totalVendidoAnual: totalVendidoAnoLoja,
       totalMetaAnual: totalMetaAnualLoja,
-      performanceAnual: dashboardData.performanceAnual.filter((p) =>
-        colaboradoresDaLoja.some((c) => c.nome.startsWith(p.name))
+      performanceAnual: dashboardData.performanceAnual.filter((p: any) =>
+        colaboradoresDaLoja.some((c: any) => c.nome.startsWith(p.name))
       ),
+      performanceMensalNoAno: dashboardData.performanceMensalNoAno,
     };
   }, [dashboardData, lojaSelecionadaId]);
 
@@ -214,6 +212,7 @@ export function DashboardPage() {
     totalMetaAnual,
     totalVendidoAnual,
     performanceAnual,
+    performanceMensalNoAno,
   } = dadosVisaoAtual;
 
   const dadosGraficoPizza = {
@@ -227,6 +226,20 @@ export function DashboardPage() {
       },
     ],
   };
+
+  const colaboradoresComVendasNoAno = useMemo(() => {
+    if (!performanceMensalNoAno || performanceMensalNoAno.length === 0)
+      return [];
+    const colaboradoresSet = new Set<string>();
+    performanceMensalNoAno.forEach((mes: any) => {
+      Object.keys(mes).forEach((key) => {
+        if (key !== "name") {
+          colaboradoresSet.add(key);
+        }
+      });
+    });
+    return Array.from(colaboradoresSet);
+  }, [performanceMensalNoAno]);
 
   return (
     <div className="space-y-6">
@@ -267,7 +280,6 @@ export function DashboardPage() {
         </TabsList>
         <TabsContent value="monthly" className="space-y-6 mt-4">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {/* Cards de Resumo Mensal */}
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">
@@ -333,7 +345,6 @@ export function DashboardPage() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Gráfico de Desempenho Mensal */}
             <Card>
               <CardHeader>
                 <CardTitle>Desempenho por Vendedor (Mês)</CardTitle>
@@ -344,7 +355,6 @@ export function DashboardPage() {
                     data={performancePeriodoSelecionado}
                     margin={{ top: 5, right: 20, left: -10, bottom: 5 }}
                   >
-                    <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="name" />
                     <YAxis tickFormatter={(value) => `R$${value / 1000}k`} />
                     <Tooltip
@@ -367,7 +377,6 @@ export function DashboardPage() {
                 </ResponsiveContainer>
               </CardContent>
             </Card>
-            {/* Gráfico de Progresso Mensal */}
             <Card>
               <CardHeader>
                 <CardTitle>Progresso da Meta</CardTitle>
@@ -441,7 +450,7 @@ export function DashboardPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {colaboradoresData.map((colaborador) => (
+              {colaboradoresData.map((colaborador: any) => (
                 <ColaboradorPerformanceCard
                   key={colaborador.id}
                   colaborador={colaborador}
@@ -453,7 +462,6 @@ export function DashboardPage() {
 
         <TabsContent value="annual" className="space-y-6 mt-4">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {/* Cards de Resumo Anual */}
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">
@@ -492,36 +500,76 @@ export function DashboardPage() {
             </Card>
           </div>
           <Card>
-            <CardHeader>
-              <CardTitle>Desempenho por Vendedor (Ano)</CardTitle>
+            <CardHeader className="flex flex-row justify-between items-center">
+              <div>
+                <CardTitle>Desempenho por Vendedor (Ano)</CardTitle>
+              </div>
+              <ToggleGroup
+                type="single"
+                value={annualView}
+                onValueChange={(value) => {
+                  if (value) setAnnualView(value);
+                }}
+                size="sm"
+              >
+                <ToggleGroupItem value="geral">Visão Geral</ToggleGroupItem>
+                <ToggleGroupItem value="timeline">
+                  Timeline Mensal
+                </ToggleGroupItem>
+              </ToggleGroup>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart
-                  data={performanceAnual}
-                  margin={{ top: 5, right: 20, left: -10, bottom: 5 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" />
-                  <YAxis tickFormatter={(value) => `R$${value / 1000}k`} />
-                  <Tooltip
-                    formatter={(value) => `R$ ${value.toLocaleString()}`}
-                  />
-                  <Legend />
-                  <Bar
-                    dataKey="meta"
-                    fill="#a1a1aa"
-                    name="Meta Anual"
-                    radius={[4, 4, 0, 0]}
-                  />
-                  <Bar
-                    dataKey="vendido"
-                    fill="#10b981"
-                    name="Vendido no Ano"
-                    radius={[4, 4, 0, 0]}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
+              {annualView === "geral" ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart
+                    data={performanceAnual}
+                    margin={{ top: 5, right: 20, left: -10, bottom: 5 }}
+                  >
+                    <XAxis dataKey="name" />
+                    <YAxis tickFormatter={(value) => `R$${value / 1000}k`} />
+                    <Tooltip
+                      formatter={(value) => `R$ ${value.toLocaleString()}`}
+                    />
+                    <Legend />
+                    <Bar
+                      dataKey="meta"
+                      fill="#a1a1aa"
+                      name="Meta Anual"
+                      radius={[4, 4, 0, 0]}
+                    />
+                    <Bar
+                      dataKey="vendido"
+                      fill="#10b981"
+                      name="Vendido no Ano"
+                      radius={[4, 4, 0, 0]}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart
+                    data={performanceMensalNoAno}
+                    margin={{ top: 5, right: 20, left: -10, bottom: 5 }}
+                  >
+                    <XAxis dataKey="name" />
+                    <YAxis tickFormatter={(value) => `R$${value / 1000}k`} />
+                    <Tooltip
+                      formatter={(value) => `R$ ${value.toLocaleString()}`}
+                    />
+                    <Legend />
+                    {colaboradoresComVendasNoAno.map((colaborador, index) => (
+                      <Bar
+                        key={colaborador}
+                        dataKey={colaborador}
+                        stackId="a"
+                        fill={CHART_COLORS[index % CHART_COLORS.length]}
+                        name={colaborador}
+                        radius={[4, 4, 0, 0]}
+                      />
+                    ))}
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </CardContent>
           </Card>
           <Card>
@@ -534,8 +582,8 @@ export function DashboardPage() {
             </CardHeader>
             <CardContent className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               {colaboradoresData
-                .filter((c) => c.metasAnuais.length > 0)
-                .map((colaborador) => (
+                .filter((c: any) => c.metasAnuais.length > 0)
+                .map((colaborador: any) => (
                   <ColaboradorPerformanceCard
                     key={colaborador.id}
                     colaborador={colaborador}

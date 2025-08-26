@@ -26,6 +26,7 @@ import {
 import { usePeriodFilter } from "./period-filter-context";
 import { toast } from "@/hooks/use-toast";
 import { format, addMonths } from "date-fns";
+import { ptBR } from "date-fns/locale";
 
 interface DataContextType {
   colaboradores: Colaborador[];
@@ -100,7 +101,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
     simulationDate,
   } = usePeriodFilter();
 
-  // Funções add, update, delete (sem alterações)...
   const addColaborador = (
     colaborador: Omit<Colaborador, "id" | "dataAdmissao" | "status">
   ) => {
@@ -241,7 +241,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
     );
   };
 
-  // LÓGICA DE GETDASHBOARDDATA ATUALIZADA
   const getDashboardData = useCallback(() => {
     const periodToFilter =
       filterMode === "live"
@@ -251,7 +250,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     const filteredVendas = vendas.filter((v) => isDateInPeriod(v.data));
 
-    // Cálculos mensais (sem alteração)...
     const vendasPorVendedor = colaboradores
       .map((col) => ({
         name: col.nome.split(" ")[0],
@@ -260,6 +258,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           .reduce((sum, v) => sum + v.valor, 0),
       }))
       .filter((item) => item.value > 0);
+
     const vendasPorPagamento = formasPagamento
       .map((fp) => ({
         name: fp.nome,
@@ -268,15 +267,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
           .reduce((sum, v) => sum + v.valor, 0),
       }))
       .filter((item) => item.value > 0);
+
     const performancePeriodoSelecionado = colaboradores
       .map((colaborador) => {
-        const metaColaborador = metas.find(
-          (m) =>
-            m.colaboradorId === colaborador.id &&
-            m.periodo === periodToFilter &&
-            m.tipo === "mensal"
-        );
-        if (!metaColaborador) return null;
         const totalVendido = vendas
           .filter(
             (v) =>
@@ -284,9 +277,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
               v.data.startsWith(periodToFilter)
           )
           .reduce((sum, v) => sum + v.valor, 0);
+
+        if (totalVendido === 0) {
+          return null;
+        }
+
+        const metaColaborador = metas.find(
+          (m) =>
+            m.colaboradorId === colaborador.id &&
+            m.periodo === periodToFilter &&
+            m.tipo === "mensal"
+        );
+
         return {
           name: colaborador.nome.split(" ")[0],
-          meta: metaColaborador.valorMeta,
+          meta: metaColaborador?.valorMeta || 0,
           vendido: totalVendido,
         };
       })
@@ -415,7 +420,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
         ? Math.round((totalVendido / totalMetaMensal) * 100)
         : 0;
 
-    // ===== INÍCIO - CÁLCULOS ANUAIS GLOBAIS ADICIONADOS =====
     const totalMetaAnual = colaboradoresData.reduce(
       (sum, col) => sum + col.metasAnuais.reduce((s, m) => s + m.valorMeta, 0),
       0
@@ -424,15 +428,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
       (sum, col) => sum + col.metasAnuais.reduce((s, m) => s + m.vendido, 0),
       0
     );
+
     const performanceAnual = colaboradores
       .map((colaborador) => {
-        const metaColaborador = metas.find(
-          (m) =>
-            m.colaboradorId === colaborador.id &&
-            m.periodo === yearToFilter &&
-            m.tipo === "anual"
-        );
-        if (!metaColaborador) return null;
         const totalVendido = vendas
           .filter(
             (v) =>
@@ -440,14 +438,51 @@ export function DataProvider({ children }: { children: ReactNode }) {
               v.data.startsWith(yearToFilter)
           )
           .reduce((sum, v) => sum + v.valor, 0);
+
+        if (totalVendido === 0) {
+          return null;
+        }
+
+        const metaColaborador = metas.find(
+          (m) =>
+            m.colaboradorId === colaborador.id &&
+            m.periodo === yearToFilter &&
+            m.tipo === "anual"
+        );
         return {
           name: colaborador.nome.split(" ")[0],
-          meta: metaColaborador.valorMeta,
+          meta: metaColaborador?.valorMeta || 0,
           vendido: totalVendido,
         };
       })
       .filter((item): item is NonNullable<typeof item> => item !== null);
-    // ===== FIM - CÁLCULOS ANUAIS GLOBAIS ADICIONADOS =====
+
+    const performanceMensalNoAno = Array.from({ length: 12 }, (_, i) => ({
+      name: format(new Date(Number(yearToFilter), i, 1), "MMM", {
+        locale: ptBR,
+      }),
+    }));
+
+    colaboradores.forEach((colaborador) => {
+      const vendasDoColaboradorNoAno = vendas.filter(
+        (v) =>
+          v.colaboradorId === colaborador.id && v.data.startsWith(yearToFilter)
+      );
+
+      if (vendasDoColaboradorNoAno.length > 0) {
+        performanceMensalNoAno.forEach((mes, index) => {
+          const mesAtual = String(index + 1).padStart(2, "0");
+          const vendasDoMes = vendasDoColaboradorNoAno.filter(
+            (v) => v.data.substring(5, 7) === mesAtual
+          );
+          const totalVendidoNoMes = vendasDoMes.reduce(
+            (sum, v) => sum + v.valor,
+            0
+          );
+          (mes as any)[colaborador.nome.split(" ")[0]] = totalVendidoNoMes;
+        });
+      }
+    });
 
     return {
       colaboradoresData,
@@ -460,10 +495,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
       vendasPorPagamento,
       performancePeriodoSelecionado,
       desempenhoPorEquipe,
-      // NOVAS PROPRIEDADES RETORNADAS
       totalMetaAnual,
       totalVendidoAnual,
       performanceAnual,
+      performanceMensalNoAno,
     };
   }, [
     vendas,
@@ -478,9 +513,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   ]);
 
   const getComissoesBaseadasEmVendas = useCallback(() => {
-    /* ... (lógica inalterada) ... */ const filteredVendas = vendas.filter(
-      (v) => isDateInPeriod(v.data)
-    );
+    const filteredVendas = vendas.filter((v) => isDateInPeriod(v.data));
     if (filteredVendas.length === 0) {
       return {
         vendasPorColaborador: [],
