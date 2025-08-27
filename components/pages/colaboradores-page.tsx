@@ -1,8 +1,6 @@
 "use client";
 
-import type React from "react";
-
-import { useState } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import {
   Card,
   CardContent,
@@ -45,17 +43,20 @@ import {
   Users,
   Phone,
   Mail,
-  Calendar,
   Store,
+  KeyRound,
+  Upload,
 } from "lucide-react";
 import { useData } from "@/contexts/data-context";
 import { toast } from "@/hooks/use-toast";
 import { Colaborador } from "@/data/mock-data";
+import { Checkbox } from "@/components/ui/checkbox";
 
 export function ColaboradoresPage() {
   const {
     colaboradores,
     lojas,
+    usuarios,
     addColaborador,
     updateColaborador,
     deleteColaborador,
@@ -63,13 +64,20 @@ export function ColaboradoresPage() {
   const [showDialog, setShowDialog] = useState(false);
   const [editingColaborador, setEditingColaborador] =
     useState<Colaborador | null>(null);
+
   const [formData, setFormData] = useState({
     nome: "",
     email: "",
     telefone: "",
     lojaId: "",
     cargo: "",
+    foto: "",
+    temAcesso: false,
+    tipo: "vendedor",
+    password: "",
   });
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const resetForm = () => {
     setFormData({
@@ -78,34 +86,73 @@ export function ColaboradoresPage() {
       telefone: "",
       lojaId: "",
       cargo: "",
+      foto: "",
+      temAcesso: false,
+      tipo: "vendedor",
+      password: "",
     });
     setEditingColaborador(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFormData({ ...formData, foto: reader.result as string });
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (formData.temAcesso) {
+      if (!formData.tipo) {
+        toast({
+          title: "Erro",
+          description: "O tipo de acesso é obrigatório.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (!editingColaborador && formData.password.length < 3) {
+        toast({
+          title: "Senha curta",
+          description: "A senha de acesso deve ter no mínimo 3 caracteres.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
     const colaboradorData = {
-      ...formData,
+      nome: formData.nome,
+      email: formData.email,
+      telefone: formData.telefone,
       lojaId: Number(formData.lojaId),
-      dataAdmissao:
-        editingColaborador?.dataAdmissao ||
-        new Date().toISOString().split("T")[0],
-      status: editingColaborador?.status || ("ativo" as const),
+      cargo: formData.cargo,
+      tipo: formData.tipo as "vendedor" | "admin" | "gerente",
+      foto: formData.foto,
     };
 
     if (editingColaborador) {
-      updateColaborador({ ...editingColaborador, ...colaboradorData });
-      toast({
-        title: "Colaborador atualizado!",
-        description: "As informações foram salvas com sucesso.",
-      });
+      const acesso = {
+        criar: formData.temAcesso,
+        tipo: formData.tipo as "admin" | "colaborador" | "gerente",
+      };
+      updateColaborador({ ...editingColaborador, ...colaboradorData }, acesso);
+      toast({ title: "Colaborador atualizado!" });
     } else {
-      addColaborador(colaboradorData);
-      toast({
-        title: "Colaborador adicionado!",
-        description: "Novo colaborador foi cadastrado com sucesso.",
-      });
+      const userData = formData.temAcesso
+        ? {
+            tipo: formData.tipo,
+          }
+        : undefined;
+      addColaborador(colaboradorData, userData);
+      toast({ title: "Colaborador criado com sucesso!" });
     }
 
     setShowDialog(false);
@@ -113,6 +160,9 @@ export function ColaboradoresPage() {
   };
 
   const handleEdit = (colaborador: Colaborador) => {
+    const usuarioVinculado = usuarios.find(
+      (u) => u.colaboradorId === colaborador.id
+    );
     setEditingColaborador(colaborador);
     setFormData({
       nome: colaborador.nome,
@@ -120,12 +170,20 @@ export function ColaboradoresPage() {
       telefone: colaborador.telefone,
       lojaId: String(colaborador.lojaId),
       cargo: colaborador.cargo,
+      foto: colaborador.foto || "",
+      temAcesso: !!usuarioVinculado,
+      tipo: colaborador.tipo,
+      password: "",
     });
     setShowDialog(true);
   };
 
   const handleDelete = (id: number) => {
-    if (confirm("Tem certeza que deseja excluir este colaborador?")) {
+    if (
+      confirm(
+        "Tem certeza que deseja excluir este colaborador e seu usuário de acesso?"
+      )
+    ) {
       deleteColaborador(id);
       toast({
         title: "Colaborador excluído!",
@@ -145,12 +203,25 @@ export function ColaboradoresPage() {
   const getLojaNome = (lojaId: number) =>
     lojas.find((l) => l.id === lojaId)?.nome || "N/A";
 
+  const getTipoAcesso = (colaborador: Colaborador) => {
+    const usuario = usuarios.find((u) => u.colaboradorId === colaborador.id);
+    return usuario ? (
+      <Badge variant="secondary" className="capitalize">
+        {colaborador.tipo}
+      </Badge>
+    ) : (
+      <span className="text-muted-foreground">-</span>
+    );
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold">Colaboradores</h1>
-          <p className="text-gray-600">Gerencie a equipe de vendas</p>
+          <p className="text-gray-600">
+            Gerencie a equipe de vendas e seus acessos
+          </p>
         </div>
 
         <Dialog open={showDialog} onOpenChange={setShowDialog}>
@@ -160,45 +231,72 @@ export function ColaboradoresPage() {
               Novo Colaborador
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle>
                 {editingColaborador ? "Editar Colaborador" : "Novo Colaborador"}
               </DialogTitle>
               <DialogDescription>
-                {editingColaborador
-                  ? "Atualize as informações do colaborador"
-                  : "Adicione um novo colaborador à equipe"}
+                Preencha os dados do colaborador. Se necessário, conceda acesso
+                ao sistema.
               </DialogDescription>
             </DialogHeader>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="nome">Nome Completo</Label>
+            <form onSubmit={handleSubmit} className="space-y-4 pt-4">
+              <div className="flex items-start gap-4">
+                <div className="flex-shrink-0">
+                  <Label>Foto</Label>
+                  <Avatar className="h-20 w-20 mt-2">
+                    <AvatarImage
+                      src={formData.foto || "/placeholder-user.jpg"}
+                      alt="Avatar do Colaborador"
+                    />
+                    <AvatarFallback>
+                      <Users />
+                    </AvatarFallback>
+                  </Avatar>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full mt-2"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <Upload className="w-3 h-3 mr-2" />
+                    Alterar
+                  </Button>
                   <Input
-                    id="nome"
-                    value={formData.nome}
-                    onChange={(e) =>
-                      setFormData({ ...formData, nome: e.target.value })
-                    }
-                    placeholder="Nome do colaborador"
-                    required
+                    ref={fileInputRef}
+                    type="file"
+                    className="hidden"
+                    accept="image/*"
+                    onChange={handleFileChange}
                   />
                 </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) =>
-                      setFormData({ ...formData, email: e.target.value })
-                    }
-                    placeholder="email@empresa.com"
-                    required
-                  />
+                <div className="flex-grow space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="nome">Nome Completo</Label>
+                    <Input
+                      id="nome"
+                      value={formData.nome}
+                      onChange={(e) =>
+                        setFormData({ ...formData, nome: e.target.value })
+                      }
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="email">Email</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      value={formData.email}
+                      onChange={(e) =>
+                        setFormData({ ...formData, email: e.target.value })
+                      }
+                      required
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -211,31 +309,19 @@ export function ColaboradoresPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, telefone: e.target.value })
                     }
-                    placeholder="(11) 99999-9999"
                     required
                   />
                 </div>
-
                 <div className="space-y-2">
                   <Label htmlFor="cargo">Cargo</Label>
-                  <Select
+                  <Input
+                    id="cargo"
                     value={formData.cargo}
-                    onValueChange={(value) =>
-                      setFormData({ ...formData, cargo: value })
+                    onChange={(e) =>
+                      setFormData({ ...formData, cargo: e.target.value })
                     }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione o cargo" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Vendedor">Vendedor</SelectItem>
-                      <SelectItem value="Vendedor Sênior">
-                        Vendedor Sênior
-                      </SelectItem>
-                      <SelectItem value="Supervisor">Supervisor</SelectItem>
-                      <SelectItem value="Gerente">Gerente</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    required
+                  />
                 </div>
               </div>
 
@@ -246,6 +332,7 @@ export function ColaboradoresPage() {
                   onValueChange={(value) =>
                     setFormData({ ...formData, lojaId: value })
                   }
+                  required
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione a loja" />
@@ -260,7 +347,63 @@ export function ColaboradoresPage() {
                 </Select>
               </div>
 
-              <div className="flex justify-end space-x-2">
+              <div className="space-y-4 rounded-lg border p-4">
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="temAcesso"
+                    checked={formData.temAcesso}
+                    onCheckedChange={(checked) =>
+                      setFormData({ ...formData, temAcesso: !!checked })
+                    }
+                  />
+                  <Label htmlFor="temAcesso" className="font-semibold">
+                    Conceder Acesso ao Sistema
+                  </Label>
+                </div>
+
+                {formData.temAcesso && (
+                  <div className="space-y-4 animate-in fade-in">
+                    <div className="space-y-2">
+                      <Label htmlFor="tipo">Tipo de Acesso</Label>
+                      <Select
+                        value={formData.tipo}
+                        onValueChange={(value) =>
+                          setFormData({ ...formData, tipo: value })
+                        }
+                        required={formData.temAcesso}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione o tipo" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="vendedor">Vendedor</SelectItem>
+                          <SelectItem value="gerente">Gerente</SelectItem>
+                          <SelectItem value="admin">Admin</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {!editingColaborador && (
+                      <div className="space-y-2">
+                        <Label htmlFor="password">Senha de Acesso</Label>
+                        <Input
+                          id="password"
+                          type="password"
+                          value={formData.password}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              password: e.target.value,
+                            })
+                          }
+                          required={formData.temAcesso}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-4">
                 <Button
                   type="button"
                   variant="outline"
@@ -277,7 +420,6 @@ export function ColaboradoresPage() {
         </Dialog>
       </div>
 
-      {/* Cards de Resumo */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -293,7 +435,6 @@ export function ColaboradoresPage() {
             </p>
           </CardContent>
         </Card>
-
         {lojas.slice(0, 3).map((loja) => (
           <Card key={loja.id}>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -310,12 +451,11 @@ export function ColaboradoresPage() {
         ))}
       </div>
 
-      {/* Tabela de Colaboradores */}
       <Card>
         <CardHeader>
           <CardTitle>Lista de Colaboradores</CardTitle>
           <CardDescription>
-            Gerencie todos os colaboradores da equipe de vendas
+            Gerencie todos os colaboradores e seus níveis de acesso.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -324,10 +464,9 @@ export function ColaboradoresPage() {
               <TableRow>
                 <TableHead>Colaborador</TableHead>
                 <TableHead>Contato</TableHead>
+                <TableHead>Acesso</TableHead>
                 <TableHead>Loja</TableHead>
-                <TableHead>Cargo</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Data Admissão</TableHead>
                 <TableHead>Ações</TableHead>
               </TableRow>
             </TableHeader>
@@ -338,7 +477,7 @@ export function ColaboradoresPage() {
                     <div className="flex items-center space-x-3">
                       <Avatar className="h-10 w-10">
                         <AvatarImage
-                          src={colaborador.foto || "/placeholder.svg"}
+                          src={colaborador.foto || "/placeholder-user.jpg"}
                           alt={colaborador.nome}
                         />
                         <AvatarFallback>
@@ -363,21 +502,13 @@ export function ColaboradoresPage() {
                       {colaborador.telefone}
                     </div>
                   </TableCell>
+                  <TableCell>{getTipoAcesso(colaborador)}</TableCell>
                   <TableCell>
                     <Badge variant="outline">
                       {getLojaNome(colaborador.lojaId)}
                     </Badge>
                   </TableCell>
-                  <TableCell>{colaborador.cargo}</TableCell>
                   <TableCell>{getStatusBadge(colaborador.status)}</TableCell>
-                  <TableCell>
-                    <div className="text-sm flex items-center">
-                      <Calendar className="w-3 h-3 mr-1" />
-                      {new Date(colaborador.dataAdmissao).toLocaleDateString(
-                        "pt-BR"
-                      )}
-                    </div>
-                  </TableCell>
                   <TableCell>
                     <div className="flex space-x-2">
                       <Button

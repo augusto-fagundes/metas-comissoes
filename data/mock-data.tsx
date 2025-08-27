@@ -4,6 +4,7 @@ export interface Colaborador {
   email: string;
   telefone: string;
   cargo: string;
+  tipo: "vendedor" | "admin" | "gerente"; // CAMPO ADICIONADO
   lojaId: number;
   dataAdmissao: string;
   status: "ativo" | "inativo";
@@ -86,6 +87,7 @@ export const colaboradores: Colaborador[] = [
     email: "joao@empresa.com",
     telefone: "(11) 99999-0001",
     cargo: "Vendedor",
+    tipo: "vendedor", // CAMPO ADICIONADO
     lojaId: 1,
     dataAdmissao: "2023-01-15",
     status: "ativo",
@@ -96,6 +98,7 @@ export const colaboradores: Colaborador[] = [
     email: "maria@empresa.com",
     telefone: "(11) 99999-0002",
     cargo: "Vendedora",
+    tipo: "vendedor", // CAMPO ADICIONADO
     lojaId: 2,
     dataAdmissao: "2023-02-20",
     status: "ativo",
@@ -106,6 +109,7 @@ export const colaboradores: Colaborador[] = [
     email: "pedro@empresa.com",
     telefone: "(11) 99999-0003",
     cargo: "Vendedor Senior",
+    tipo: "vendedor", // CAMPO ADICIONADO
     lojaId: 1,
     dataAdmissao: "2022-11-10",
     status: "ativo",
@@ -116,6 +120,7 @@ export const colaboradores: Colaborador[] = [
     email: "ana@empresa.com",
     telefone: "(11) 99999-0004",
     cargo: "Vendedora",
+    tipo: "vendedor", // CAMPO ADICIONADO
     lojaId: 2,
     dataAdmissao: "2023-03-05",
     status: "ativo",
