@@ -84,6 +84,11 @@ interface DataContextType {
   setComissoes: React.Dispatch<React.SetStateAction<Comissao[]>>;
   setMetas: React.Dispatch<React.SetStateAction<Meta[]>>;
   notificacoesAtivas: any[];
+  addUsuario: (
+    usuario: Omit<Usuario, "id" | "dataCriacao"> & { status: string }
+  ) => void;
+  updateUsuario: (usuario: Usuario) => void;
+  deleteUsuario: (id: number) => void;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -255,6 +260,27 @@ export function DataProvider({ children }: { children: ReactNode }) {
     );
   const deleteFormaPagamento = (id: number) =>
     setFormasPagamento((prev) => prev.filter((f) => f.id !== id));
+
+  const addUsuario = (
+    usuario: Omit<Usuario, "id" | "dataCriacao"> & { status: string }
+  ) => {
+    const novoId =
+      usuarios.length > 0 ? Math.max(...usuarios.map((u) => u.id)) + 1 : 1;
+    setUsuarios((prev) => [
+      ...prev,
+      {
+        ...usuario,
+        id: novoId,
+        dataCriacao: new Date().toISOString().split("T")[0],
+      },
+    ]);
+  };
+  const updateUsuario = (usuarioAtualizado: Usuario) =>
+    setUsuarios((prev) =>
+      prev.map((u) => (u.id === usuarioAtualizado.id ? usuarioAtualizado : u))
+    );
+  const deleteUsuario = (id: number) =>
+    setUsuarios((prev) => prev.filter((u) => u.id !== id));
 
   const aprovarComissao = (
     id: number,
@@ -481,14 +507,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
         ? Math.round((totalVendido / totalMetaMensal) * 100)
         : 0;
 
-    const totalMetaAnual = colaboradoresData.reduce(
-      (sum, col) => sum + col.metasAnuais.reduce((s, m) => s + m.valorMeta, 0),
-      0
-    );
-    const totalVendidoAnual = colaboradoresData.reduce(
-      (sum, col) => sum + col.metasAnuais.reduce((s, m) => s + m.vendido, 0),
-      0
-    );
+    // CORREÇÃO: Calcular o total vendido do ano diretamente das vendas.
+    const totalVendidoAnual = vendas
+      .filter((v) => v.data.startsWith(yearToFilter))
+      .reduce((sum, v) => sum + v.valor, 0);
+
+    // Manter o cálculo de meta anual como estava, dependente das metas.
+    const totalMetaAnual = metas
+      .filter((m) => m.periodo === yearToFilter && m.tipo === "anual")
+      .reduce((sum, m) => sum + m.valorMeta, 0);
 
     const performanceAnual = colaboradores
       .filter((c) => c.tipo === "vendedor")
@@ -501,23 +528,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
           )
           .reduce((sum, v) => sum + v.valor, 0);
 
-        if (totalVendido === 0) {
-          return null;
-        }
-
         const metaColaborador = metas.find(
           (m) =>
             m.colaboradorId === colaborador.id &&
             m.periodo === yearToFilter &&
             m.tipo === "anual"
         );
+
         return {
           name: colaborador.nome.split(" ")[0],
           meta: metaColaborador?.valorMeta || 0,
           vendido: totalVendido,
         };
-      })
-      .filter((item): item is NonNullable<typeof item> => item !== null);
+      });
 
     const performanceMensalNoAno = Array.from({ length: 12 }, (_, i) => ({
       name: format(new Date(Number(yearToFilter), i, 1), "MMM", {
@@ -575,12 +598,153 @@ export function DataProvider({ children }: { children: ReactNode }) {
   ]);
 
   const getComissoesBaseadasEmVendas = useCallback(() => {
-    // ...
-  }, [vendas, colaboradores, lojas, formasPagamento, isDateInPeriod]);
+    const periodToFilter =
+      filterMode === "live"
+        ? format(simulationDate, "yyyy-MM")
+        : selectedPeriod;
+
+    const vendasDoPeriodo = vendas.filter((v) =>
+      v.data.startsWith(periodToFilter)
+    );
+
+    const calcularComissao = (valor: number, forma: string) => {
+      const percentual =
+        formasPagamento.find((f) => f.codigo === forma)?.percentualComissao ||
+        0;
+      return (valor * percentual) / 100;
+    };
+
+    const vendasPorColaborador = colaboradores.map((col) => {
+      const vendasColaborador = vendasDoPeriodo.filter(
+        (v) => v.colaboradorId === col.id
+      );
+
+      const detalhesFormasPagamento = formasPagamento.map((forma) => {
+        const vendasPorForma = vendasColaborador.filter(
+          (v) => v.formaPagamento === forma.codigo
+        );
+        const totalVendas = vendasPorForma.reduce((sum, v) => sum + v.valor, 0);
+        const comissao = totalVendas * (forma.percentualComissao / 100);
+        return {
+          formaPagamento: forma.nome,
+          totalVendas,
+          comissao,
+        };
+      });
+
+      const totalComissao = detalhesFormasPagamento.reduce(
+        (sum, d) => sum + d.comissao,
+        0
+      );
+      const totalVendas = vendasColaborador.reduce(
+        (sum, v) => sum + v.valor,
+        0
+      );
+
+      return {
+        colaborador: col,
+        quantidadeVendas: vendasColaborador.length,
+        totalVendas,
+        totalComissao,
+        detalhesFormasPagamento,
+        vendas: vendasColaborador,
+      };
+    });
+
+    return {
+      vendasPorColaborador,
+    };
+  }, [
+    vendas,
+    colaboradores,
+    formasPagamento,
+    filterMode,
+    selectedPeriod,
+    simulationDate,
+  ]);
 
   const fecharMes = useCallback(
     (novosValoresMetas?: { [metaId: number]: number }) => {
-      // ...
+      const previousMonthPeriod = getPreviousMonthPeriod();
+      const nextMonthPeriod = format(
+        addMonths(new Date(`${previousMonthPeriod}-01`), 1),
+        "yyyy-MM"
+      );
+
+      const vendasDoPeriodo = vendas.filter((v) =>
+        v.data.startsWith(previousMonthPeriod)
+      );
+
+      const calcularComissao = (valor: number, forma: string) => {
+        const percentual =
+          formasPagamento.find((f) => f.codigo === forma)?.percentualComissao ||
+          0;
+        return (valor * percentual) / 100;
+      };
+
+      const novasComissoes: Comissao[] = [];
+      const colaboradoresComVendas = colaboradores.filter((col) =>
+        vendasDoPeriodo.some((v) => v.colaboradorId === col.id)
+      );
+      let ultimoIdComissao =
+        comissoes.length > 0 ? Math.max(...comissoes.map((c) => c.id)) : 0;
+
+      for (const col of colaboradoresComVendas) {
+        const vendasColaborador = vendasDoPeriodo.filter(
+          (v) => v.colaboradorId === col.id
+        );
+        if (vendasColaborador.length > 0) {
+          const valorTotalComissao = vendasColaborador.reduce((sum, v) => {
+            return sum + calcularComissao(v.valor, v.formaPagamento);
+          }, 0);
+
+          const detalhes = formasPagamento.map((forma) => {
+            const vendasPorForma = vendasColaborador.filter(
+              (v) => v.formaPagamento === forma.codigo
+            );
+            const totalVendas = vendasPorForma.reduce(
+              (sum, v) => sum + v.valor,
+              0
+            );
+            const comissao = totalVendas * (forma.percentualComissao / 100);
+            return {
+              formaPagamento: forma.nome,
+              valor: totalVendas,
+              comissao: comissao,
+            };
+          });
+
+          novasComissoes.push({
+            id: ++ultimoIdComissao,
+            colaboradorId: col.id,
+            periodo: previousMonthPeriod,
+            valorComissao: valorTotalComissao,
+            status: "pendente",
+            dataCalculo: new Date().toISOString().split("T")[0],
+            detalhes,
+          });
+        }
+      }
+
+      const metasAtualizadas = [...metas];
+      metas.forEach((meta) => {
+        if (
+          meta.periodo === previousMonthPeriod &&
+          meta.recorrente &&
+          meta.tipo === "mensal"
+        ) {
+          const novoValor = novosValoresMetas?.[meta.id] ?? meta.valorMeta;
+          const novaMeta: Meta = {
+            ...meta,
+            id: metas.length > 0 ? Math.max(...metas.map((m) => m.id)) + 1 : 1,
+            periodo: nextMonthPeriod,
+            valorMeta: novoValor,
+            status: "ativa",
+          };
+          metasAtualizadas.push(novaMeta);
+        }
+      });
+      return { novasComissoes, metasAtualizadas };
     },
     [
       metas,
@@ -625,6 +789,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setComissoes,
     setMetas,
     notificacoesAtivas: [],
+    addUsuario,
+    updateUsuario,
+    deleteUsuario,
   };
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;

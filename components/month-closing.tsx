@@ -29,7 +29,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import { Archive, Repeat, User, ShoppingCart } from "lucide-react";
+import { Archive, Repeat, User, ShoppingCart, Printer } from "lucide-react";
 import { useData } from "@/contexts/data-context";
 import { usePeriodFilter } from "@/contexts/period-filter-context";
 import { format } from "date-fns";
@@ -149,6 +149,125 @@ export function MonthClosing() {
       ...prev,
       [metaId]: isNaN(numericValue) ? 0 : numericValue,
     }));
+  };
+
+  // Função para imprimir o recibo
+  const handlePrintReceipt = () => {
+    if (!closingData || !monthToClose) return;
+
+    const periodLabel = format(
+      new Date(`${monthToClose}-15`),
+      "MMMM 'de' yyyy",
+      { locale: ptBR }
+    );
+    const printContent = `
+      <html>
+        <head>
+          <title>Recibo de Fechamento de Mês</title>
+          <style>
+            body { font-family: sans-serif; padding: 20px; font-size: 12px; }
+            h1, h2, h3 { margin: 0 0 10px 0; }
+            h1 { font-size: 18px; }
+            h2 { font-size: 14px; color: #555; border-bottom: 1px solid #ccc; padding-bottom: 5px; margin-bottom: 15px; }
+            .section { margin-bottom: 20px; }
+            .summary-item { margin-bottom: 5px; }
+            .summary-label { font-weight: bold; }
+            .summary-value { float: right; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+            th, td { padding: 8px; border: 1px solid #ccc; text-align: left; }
+            th { background-color: #f0f0f0; }
+            .total { font-weight: bold; }
+          </style>
+        </head>
+        <body>
+          <h1>Recibo de Fechamento de Mês</h1>
+          <h2>Período: ${periodLabel}</h2>
+
+          <div class="section">
+            <h2>Resumo Geral do Mês</h2>
+            <div class="summary-item">
+              <span class="summary-label">Total Vendido:</span>
+              <span class="summary-value">R$ ${closingData.totalVendido.toLocaleString(
+                "pt-BR",
+                { minimumFractionDigits: 2 }
+              )}</span>
+            </div>
+            <div class="summary-item">
+              <span class="summary-label">Total de Comissões a Gerar:</span>
+              <span class="summary-value">R$ ${closingData.totalComissoes.toLocaleString(
+                "pt-BR",
+                { minimumFractionDigits: 2 }
+              )}</span>
+            </div>
+          </div>
+
+          <div class="section">
+            <h2>Resumo por Vendedor</h2>
+            ${closingData.comissoesGeradas
+              .map(
+                (colData) => `
+              <h3>${colData.nome}</h3>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Venda</th>
+                    <th>Valor</th>
+                    <th>Comissão</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${colData.vendas
+                    .map(
+                      (venda) => `
+                    <tr>
+                      <td>${venda.cliente} - ${format(
+                        new Date(`${venda.data}T12:00:00`),
+                        "dd/MM/yyyy"
+                      )}</td>
+                      <td>R$ ${venda.valor.toLocaleString("pt-BR", {
+                        minimumFractionDigits: 2,
+                      })}</td>
+                      <td>R$ ${(
+                        (venda.valor *
+                          (formasPagamento.find(
+                            (f) => f.codigo === venda.formaPagamento
+                          )?.percentualComissao || 0)) /
+                        100
+                      ).toLocaleString("pt-BR", {
+                        minimumFractionDigits: 2,
+                      })}</td>
+                    </tr>
+                  `
+                    )
+                    .join("")}
+                  <tr>
+                    <td class="total">Total Vendido:</td>
+                    <td class="total">R$ ${colData.totalVendido.toLocaleString(
+                      "pt-BR",
+                      { minimumFractionDigits: 2 }
+                    )}</td>
+                    <td class="total">R$ ${colData.valorComissao.toLocaleString(
+                      "pt-BR",
+                      { minimumFractionDigits: 2 }
+                    )}</td>
+                  </tr>
+                </tbody>
+              </table>
+            `
+              )
+              .join("")}
+          </div>
+        </body>
+      </html>
+    `;
+
+    const printWindow = window.open("", "", "height=600,width=800");
+    if (printWindow) {
+      printWindow.document.write(printContent);
+      printWindow.document.close();
+      printWindow.focus();
+      printWindow.print();
+    }
   };
 
   if (!monthToClose || !closingData) {
@@ -330,6 +449,10 @@ export function MonthClosing() {
           )}
         </div>
         <DialogFooter>
+          <Button variant="outline" onClick={handlePrintReceipt}>
+            <Printer className="w-4 h-4 mr-2" />
+            Imprimir Recibo
+          </Button>
           <DialogClose asChild>
             <Button variant="outline">Cancelar</Button>
           </DialogClose>

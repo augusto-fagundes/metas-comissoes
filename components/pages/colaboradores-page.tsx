@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useEffect, useRef } from "react";
+import React, { useState, useRef } from "react";
 import {
   Card,
   CardContent,
@@ -44,7 +44,6 @@ import {
   Phone,
   Mail,
   Store,
-  KeyRound,
   Upload,
 } from "lucide-react";
 import { useData } from "@/contexts/data-context";
@@ -382,23 +381,27 @@ export function ColaboradoresPage() {
                         </SelectContent>
                       </Select>
                     </div>
-                    {!editingColaborador && (
-                      <div className="space-y-2">
-                        <Label htmlFor="password">Senha de Acesso</Label>
-                        <Input
-                          id="password"
-                          type="password"
-                          value={formData.password}
-                          onChange={(e) =>
-                            setFormData({
-                              ...formData,
-                              password: e.target.value,
-                            })
-                          }
-                          required={formData.temAcesso}
-                        />
-                      </div>
-                    )}
+                    <div className="space-y-2">
+                      <Label htmlFor="password">
+                        {editingColaborador
+                          ? "Nova Senha (opcional)"
+                          : "Senha de Acesso"}
+                      </Label>
+                      <Input
+                        id="password"
+                        type="password"
+                        value={formData.password}
+                        onChange={(e) =>
+                          setFormData({ ...formData, password: e.target.value })
+                        }
+                        required={formData.temAcesso && !editingColaborador}
+                        placeholder={
+                          editingColaborador
+                            ? "Deixe em branco para manter a atual"
+                            : ""
+                        }
+                      />
+                    </div>
                   </div>
                 )}
               </div>
@@ -420,37 +423,7 @@ export function ColaboradoresPage() {
         </Dialog>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Total de Colaboradores
-            </CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{colaboradores.length}</div>
-            <p className="text-xs text-muted-foreground">
-              {colaboradores.filter((c) => c.status === "ativo").length} ativos
-            </p>
-          </CardContent>
-        </Card>
-        {lojas.slice(0, 3).map((loja) => (
-          <Card key={loja.id}>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">{loja.nome}</CardTitle>
-              <Store className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {colaboradores.filter((c) => c.lojaId === loja.id).length}
-              </div>
-              <p className="text-xs text-muted-foreground">colaboradores</p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
+      {/* Tabela de Colaboradores */}
       <Card>
         <CardHeader>
           <CardTitle>Lista de Colaboradores</CardTitle>

@@ -142,6 +142,8 @@ export function DashboardPage() {
   const { getPeriodLabel } = usePeriodFilter();
   const [lojaSelecionadaId, setLojaSelecionadaId] = useState<string>("todas");
   const [annualView, setAnnualView] = useState("geral"); // 'geral' ou 'timeline'
+  const [vendedorSelecionado, setVendedorSelecionado] =
+    useState<string>("todos");
 
   const dashboardData = getDashboardData();
 
@@ -161,9 +163,10 @@ export function DashboardPage() {
     );
     if (!dadosEquipe) return null;
 
-    const colaboradoresDaLoja = dashboardData.colaboradoresData.filter(
-      (c: any) => c.equipe === dadosEquipe.loja.nome
+    const colaboradoresDaLoja = colaboradores.filter(
+      (c: any) => c.lojaId === idLoja
     );
+
     const totalComissaoLoja = colaboradoresDaLoja.reduce(
       (sum: number, col: any) => sum + col.comissaoMes,
       0
@@ -185,7 +188,12 @@ export function DashboardPage() {
       totalVendido: dadosEquipe.totalVendidoMes,
       percentualGeralMensal: dadosEquipe.metaMensal?.percentual || 0,
       totalComissao: totalComissaoLoja,
-      colaboradoresData: colaboradoresDaLoja,
+      colaboradoresData: colaboradoresDaLoja.map((c) => {
+        const dashboardCol = dashboardData.colaboradoresData.find(
+          (d: any) => d.id === c.id
+        );
+        return dashboardCol || c;
+      }),
       performancePeriodoSelecionado:
         dashboardData.performancePeriodoSelecionado.filter((p: any) =>
           colaboradoresDaLoja.some((c: any) => c.nome.startsWith(p.name))
@@ -197,7 +205,48 @@ export function DashboardPage() {
       ),
       performanceMensalNoAno: dashboardData.performanceMensalNoAno,
     };
-  }, [dashboardData, lojaSelecionadaId]);
+  }, [dashboardData, lojaSelecionadaId, colaboradores]);
+
+  // Lógica para filtrar o gráfico de timeline anual por vendedor
+  const performanceMensalAnualFiltrada = useMemo(() => {
+    if (vendedorSelecionado === "todos") {
+      return dadosVisaoAtual?.performanceMensalNoAno;
+    }
+    const nomeCurto = colaboradores
+      .find((c) => c.id === parseInt(vendedorSelecionado))
+      ?.nome.split(" ")[0];
+    if (!nomeCurto) {
+      return [];
+    }
+    return dadosVisaoAtual?.performanceMensalNoAno.map((mes: any) => {
+      const novoMes: any = { name: mes.name };
+      if (mes[nomeCurto]) {
+        novoMes[nomeCurto] = mes[nomeCurto];
+      }
+      return novoMes;
+    });
+  }, [dadosVisaoAtual, vendedorSelecionado, colaboradores]);
+
+  // Lógica para obter os vendedores com dados na timeline
+  const colaboradoresParaTimeline = useMemo(() => {
+    if (vendedorSelecionado === "todos") {
+      if (!dadosVisaoAtual?.performanceMensalNoAno) return [];
+      const colaboradoresSet = new Set<string>();
+      dadosVisaoAtual.performanceMensalNoAno.forEach((mes: any) => {
+        Object.keys(mes).forEach((key) => {
+          if (key !== "name") {
+            colaboradoresSet.add(key);
+          }
+        });
+      });
+      return Array.from(colaboradoresSet);
+    }
+    return [
+      colaboradores
+        .find((c) => c.id === parseInt(vendedorSelecionado))
+        ?.nome.split(" ")[0] || "",
+    ];
+  }, [dadosVisaoAtual, vendedorSelecionado, colaboradores]);
 
   if (!dadosVisaoAtual) return <div>Carregando...</div>;
 
@@ -227,19 +276,7 @@ export function DashboardPage() {
     ],
   };
 
-  const colaboradoresComVendasNoAno = useMemo(() => {
-    if (!performanceMensalNoAno || performanceMensalNoAno.length === 0)
-      return [];
-    const colaboradoresSet = new Set<string>();
-    performanceMensalNoAno.forEach((mes: any) => {
-      Object.keys(mes).forEach((key) => {
-        if (key !== "name") {
-          colaboradoresSet.add(key);
-        }
-      });
-    });
-    return Array.from(colaboradoresSet);
-  }, [performanceMensalNoAno]);
+  const isMetaAnualDefined = totalMetaAnual > 0;
 
   return (
     <div className="space-y-6">
@@ -471,7 +508,9 @@ export function DashboardPage() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  R$ {totalMetaAnual.toLocaleString()}
+                  {isMetaAnualDefined
+                    ? `R$ ${totalMetaAnual.toLocaleString()}`
+                    : "N/A"}
                 </div>
                 <p className="text-xs text-muted-foreground">
                   no ano de {getPeriodLabel().split(" de ")[1]}
@@ -494,15 +533,32 @@ export function DashboardPage() {
                     ? `${Math.round(
                         (totalVendidoAnual / totalMetaAnual) * 100
                       )}% da meta`
-                    : "N/A"}
+                    : "Sem meta definida"}
                 </p>
               </CardContent>
             </Card>
           </div>
           <Card>
             <CardHeader className="flex flex-row justify-between items-center">
-              <div>
-                <CardTitle>Desempenho por Vendedor (Ano)</CardTitle>
+              <CardTitle>Desempenho por Vendedor (Ano)</CardTitle>
+              <div className="flex items-center gap-2">
+                <Label>Vendedor:</Label>
+                <Select
+                  value={vendedorSelecionado}
+                  onValueChange={setVendedorSelecionado}
+                >
+                  <SelectTrigger className="w-48">
+                    <SelectValue placeholder="Todos" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos</SelectItem>
+                    {colaboradores.map((c) => (
+                      <SelectItem key={c.id} value={String(c.id)}>
+                        {c.nome}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <ToggleGroup
                 type="single"
@@ -548,7 +604,7 @@ export function DashboardPage() {
               ) : (
                 <ResponsiveContainer width="100%" height={300}>
                   <BarChart
-                    data={performanceMensalNoAno}
+                    data={performanceMensalAnualFiltrada}
                     margin={{ top: 5, right: 20, left: -10, bottom: 5 }}
                   >
                     <XAxis dataKey="name" />
@@ -557,7 +613,7 @@ export function DashboardPage() {
                       formatter={(value) => `R$ ${value.toLocaleString()}`}
                     />
                     <Legend />
-                    {colaboradoresComVendasNoAno.map((colaborador, index) => (
+                    {colaboradoresParaTimeline.map((colaborador, index) => (
                       <Bar
                         key={colaborador}
                         dataKey={colaborador}
@@ -581,14 +637,12 @@ export function DashboardPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {colaboradoresData
-                .filter((c: any) => c.metasAnuais.length > 0)
-                .map((colaborador: any) => (
-                  <ColaboradorPerformanceCard
-                    key={colaborador.id}
-                    colaborador={colaborador}
-                  />
-                ))}
+              {colaboradoresData.map((colaborador: any) => (
+                <ColaboradorPerformanceCard
+                  key={colaborador.id}
+                  colaborador={colaborador}
+                />
+              ))}
             </CardContent>
           </Card>
         </TabsContent>
