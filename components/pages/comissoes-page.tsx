@@ -13,7 +13,6 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-// CORREÇÃO: Adicionamos DialogTrigger à importação.
 import {
   Dialog,
   DialogContent,
@@ -40,6 +39,8 @@ import {
   Eye,
   Archive,
   Repeat,
+  FilterX,
+  ChevronDown,
 } from "lucide-react";
 import { useData } from "@/contexts/data-context";
 import { useAuth } from "@/contexts/auth-context";
@@ -49,6 +50,21 @@ import { toast } from "@/hooks/use-toast";
 import { Comissao } from "@/data/mock-data";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const MonthClosingConfirmationDialog = ({ monthToClose, onConfirm }) => {
   const { vendas, metas, colaboradores, formasPagamento } = useData();
@@ -76,7 +92,7 @@ const MonthClosingConfirmationDialog = ({ monthToClose, onConfirm }) => {
             sum + (forma ? (venda.valor * forma.percentualComissao) / 100 : 0)
           );
         }, 0);
-        return { nome: col.nome, valor: valorComissao };
+        return { nome: col.nome, valor: valorComissao, id: col.id };
       })
       .filter((v) => v && v.valor > 0);
 
@@ -208,6 +224,9 @@ export function ComissoesPage() {
   const [modalData, setModalData] = useState<any>(null);
   const [observacoes, setObservacoes] = useState("");
 
+  const [filterColaborador, setFilterColaborador] = useState<string>("todos");
+  const [filterStatus, setFilterStatus] = useState<string>("todos");
+
   const comissoesVendas = getComissoesBaseadasEmVendas();
 
   const monthToClose = useMemo(() => {
@@ -243,26 +262,40 @@ export function ComissoesPage() {
         };
       });
 
-    const notProcessedInPeriod = (comissoesVendas.vendasPorColaborador || [])
-      .filter(
-        (v) =>
-          !processedInPeriod.some((p) => p.colaboradorId === v.colaborador.id)
-      )
-      .map((v) => ({
-        id: `np-${v.colaborador.id}-${periodToFilter}`,
-        colaboradorId: v.colaborador.id,
-        colaborador: v.colaborador,
-        periodo: periodToFilter,
-        valorComissao: v.totalComissao,
-        quantidadeVendas: v.quantidadeVendas,
-        totalVendido: v.totalVendas,
-        status: "nao_processada",
-        isProcessed: false,
-        detalhes: v.detalhesFormasPagamento,
-        vendas: v.vendas,
-      }));
+    const notProcessedInPeriod =
+      filterMode === "live"
+        ? (comissoesVendas.vendasPorColaborador || [])
+            .filter(
+              (v) =>
+                !processedInPeriod.some(
+                  (p) => p.colaboradorId === v.colaborador.id
+                )
+            )
+            .map((v) => ({
+              id: `np-${v.colaborador.id}-${periodToFilter}`,
+              colaboradorId: v.colaborador.id,
+              colaborador: v.colaborador,
+              periodo: periodToFilter,
+              valorComissao: v.totalComissao,
+              quantidadeVendas: v.quantidadeVendas,
+              totalVendido: v.totalVendas,
+              status: "nao_processada",
+              isProcessed: false,
+              detalhes: v.detalhesFormasPagamento,
+              vendas: v.vendas,
+            }))
+        : [];
 
-    return [...processedInPeriod, ...notProcessedInPeriod];
+    const allData = [...processedInPeriod, ...notProcessedInPeriod];
+
+    return allData.filter((item) => {
+      const matchesColaborador =
+        filterColaborador === "todos" ||
+        item.colaboradorId.toString() === filterColaborador;
+      const matchesStatus =
+        filterStatus === "todos" || item.status === filterStatus;
+      return matchesColaborador && matchesStatus;
+    });
   }, [
     comissoes,
     comissoesVendas,
@@ -271,6 +304,8 @@ export function ComissoesPage() {
     filterMode,
     simulationDate,
     vendas,
+    filterColaborador,
+    filterStatus,
   ]);
 
   const handleConfirmClosing = () => {
@@ -353,6 +388,15 @@ export function ComissoesPage() {
     }
   };
 
+  const allStatuses = [
+    "todos",
+    "pendente",
+    "aprovada",
+    "rejeitada",
+    "paga",
+    "nao_processada",
+  ];
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -395,11 +439,43 @@ export function ComissoesPage() {
       <FilterBar />
 
       <Card>
-        <CardHeader>
-          <CardTitle>Sistema de Aprovação de Comissões</CardTitle>
-          <CardDescription>
-            Visão geral das comissões {getPeriodLabel()}.
-          </CardDescription>
+        <CardHeader className="flex flex-row justify-between items-center">
+          <div className="space-y-1">
+            <CardTitle>Sistema de Aprovação de Comissões</CardTitle>
+            <CardDescription>
+              Visão geral das comissões {getPeriodLabel()}.
+            </CardDescription>
+          </div>
+          <div className="flex items-center gap-4">
+            <Select value={filterStatus} onValueChange={setFilterStatus}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Filtrar por Status" />
+              </SelectTrigger>
+              <SelectContent>
+                {allStatuses.map((status) => (
+                  <SelectItem key={status} value={status}>
+                    {status.charAt(0).toUpperCase() + status.slice(1)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={filterColaborador}
+              onValueChange={setFilterColaborador}
+            >
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Filtrar por Colaborador" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todos</SelectItem>
+                {colaboradores.map((col) => (
+                  <SelectItem key={col.id} value={String(col.id)}>
+                    {col.nome}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </CardHeader>
         <CardContent>
           <Table>

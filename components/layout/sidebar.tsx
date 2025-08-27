@@ -15,7 +15,7 @@ import {
   DollarSign,
   LogOut,
   Menu,
-  X,
+  ChevronLeft, // Ícone adicionado aqui
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { useData } from "@/contexts/data-context";
@@ -111,7 +111,7 @@ export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
               {isCollapsed ? (
                 <Menu className="w-4 h-4" />
               ) : (
-                <X className="w-4 h-4" />
+                <ChevronLeft className="w-4 h-4" />
               )}
             </Button>
           </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useMemo } from "react";
 import {
   Card,
   CardContent,
@@ -75,6 +75,9 @@ export function ColaboradoresPage() {
     tipo: "vendedor",
     password: "",
   });
+
+  // Novo estado para o filtro de loja
+  const [filterLoja, setFilterLoja] = useState("todas");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -212,6 +215,14 @@ export function ColaboradoresPage() {
       <span className="text-muted-foreground">-</span>
     );
   };
+
+  // Lógica para filtrar a lista de colaboradores
+  const filteredColaboradores = useMemo(() => {
+    if (filterLoja === "todas") {
+      return colaboradores;
+    }
+    return colaboradores.filter((col) => col.lojaId === parseInt(filterLoja));
+  }, [colaboradores, filterLoja]);
 
   return (
     <div className="space-y-6">
@@ -425,11 +436,30 @@ export function ColaboradoresPage() {
 
       {/* Tabela de Colaboradores */}
       <Card>
-        <CardHeader>
-          <CardTitle>Lista de Colaboradores</CardTitle>
-          <CardDescription>
-            Gerencie todos os colaboradores e seus níveis de acesso.
-          </CardDescription>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div className="space-y-1">
+            <CardTitle>Lista de Colaboradores</CardTitle>
+            <CardDescription>
+              Gerencie todos os colaboradores e seus níveis de acesso.
+            </CardDescription>
+          </div>
+          {/* Componente de filtro adicionado */}
+          <div className="flex items-center gap-2">
+            <Label>Equipe:</Label>
+            <Select value={filterLoja} onValueChange={setFilterLoja}>
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder="Todas as Equipes" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todas">Todas as Equipes</SelectItem>
+                {lojas.map((loja) => (
+                  <SelectItem key={loja.id} value={String(loja.id)}>
+                    {loja.nome}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </CardHeader>
         <CardContent>
           <Table>
@@ -444,64 +474,72 @@ export function ColaboradoresPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {colaboradores.map((colaborador) => (
-                <TableRow key={colaborador.id}>
-                  <TableCell>
-                    <div className="flex items-center space-x-3">
-                      <Avatar className="h-10 w-10">
-                        <AvatarImage
-                          src={colaborador.foto || "/placeholder-user.jpg"}
-                          alt={colaborador.nome}
-                        />
-                        <AvatarFallback>
-                          {colaborador.nome
-                            .split(" ")
-                            .map((n) => n[0])
-                            .join("")}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <div className="font-medium">{colaborador.nome}</div>
-                        <div className="text-sm text-gray-500 flex items-center">
-                          <Mail className="w-3 h-3 mr-1" />
-                          {colaborador.email}
-                        </div>
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="text-sm flex items-center">
-                      <Phone className="w-3 h-3 mr-1" />
-                      {colaborador.telefone}
-                    </div>
-                  </TableCell>
-                  <TableCell>{getTipoAcesso(colaborador)}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline">
-                      {getLojaNome(colaborador.lojaId)}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>{getStatusBadge(colaborador.status)}</TableCell>
-                  <TableCell>
-                    <div className="flex space-x-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleEdit(colaborador)}
-                      >
-                        <Edit className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleDelete(colaborador.id)}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
+              {filteredColaboradores.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="h-24 text-center">
+                    Nenhum colaborador encontrado com os filtros aplicados.
                   </TableCell>
                 </TableRow>
-              ))}
+              ) : (
+                filteredColaboradores.map((colaborador) => (
+                  <TableRow key={colaborador.id}>
+                    <TableCell>
+                      <div className="flex items-center space-x-3">
+                        <Avatar className="h-10 w-10">
+                          <AvatarImage
+                            src={colaborador.foto || "/placeholder-user.jpg"}
+                            alt={colaborador.nome}
+                          />
+                          <AvatarFallback>
+                            {colaborador.nome
+                              .split(" ")
+                              .map((n) => n[0])
+                              .join("")}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <div className="font-medium">{colaborador.nome}</div>
+                          <div className="text-sm text-gray-500 flex items-center">
+                            <Mail className="w-3 h-3 mr-1" />
+                            {colaborador.email}
+                          </div>
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-sm flex items-center">
+                        <Phone className="w-3 h-3 mr-1" />
+                        {colaborador.telefone}
+                      </div>
+                    </TableCell>
+                    <TableCell>{getTipoAcesso(colaborador)}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline">
+                        {getLojaNome(colaborador.lojaId)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{getStatusBadge(colaborador.status)}</TableCell>
+                    <TableCell>
+                      <div className="flex space-x-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEdit(colaborador)}
+                        >
+                          <Edit className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDelete(colaborador.id)}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
             </TableBody>
           </Table>
         </CardContent>

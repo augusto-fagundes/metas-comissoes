@@ -45,7 +45,7 @@ import { toast } from "@/hooks/use-toast";
 import { CommissionInfoPanel } from "@/components/commission-info-panel";
 import { Meta } from "@/data/mock-data";
 import { usePeriodFilter } from "@/contexts/period-filter-context";
-import { FilterBar } from "@/components/filter-bar"; // IMPORTAÇÃO ADICIONADA
+import { FilterBar } from "@/components/filter-bar";
 
 export function MetasPage() {
   const { metas, colaboradores, lojas, addMeta, updateMeta, deleteMeta } =
@@ -62,14 +62,21 @@ export function MetasPage() {
     targetId: "",
     periodo: "",
     valorMeta: "",
-    descricao: "",
     tipo: "mensal" as "mensal" | "anual",
     recorrente: false,
   });
 
+  const [filterTipo, setFilterTipo] = useState<"todos" | "mensal" | "anual">(
+    "todos"
+  );
+
   const filteredMetas = useMemo(() => {
-    return metas.filter((meta) => isDateInPeriod(meta.periodo));
-  }, [metas, isDateInPeriod]);
+    return metas.filter(
+      (meta) =>
+        isDateInPeriod(meta.periodo) &&
+        (filterTipo === "todos" || meta.tipo === filterTipo)
+    );
+  }, [metas, isDateInPeriod, filterTipo]);
 
   const resetForm = () => {
     const defaultPeriod =
@@ -80,7 +87,6 @@ export function MetasPage() {
       targetId: "",
       periodo: defaultPeriod,
       valorMeta: "",
-      descricao: "",
       tipo: "mensal",
       recorrente: false,
     });
@@ -96,7 +102,7 @@ export function MetasPage() {
       lojaId: targetType === "equipe" ? Number(formData.targetId) : undefined,
       periodo: formData.periodo,
       valorMeta: Number.parseFloat(formData.valorMeta),
-      descricao: formData.descricao,
+      descricao: "Meta de Vendas",
       tipo: formData.tipo,
       recorrente: formData.tipo === "mensal" ? formData.recorrente : false,
     };
@@ -121,7 +127,6 @@ export function MetasPage() {
       targetId: (isEquipe ? meta.lojaId : meta.colaboradorId)?.toString() ?? "",
       periodo: meta.periodo,
       valorMeta: meta.valorMeta.toString(),
-      descricao: meta.descricao,
       tipo: meta.tipo,
       recorrente: meta.recorrente,
     });
@@ -277,20 +282,6 @@ export function MetasPage() {
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="valorMeta">Valor da Meta (R$)</Label>
-                <Input
-                  id="valorMeta"
-                  type="number"
-                  step="0.01"
-                  value={formData.valorMeta}
-                  onChange={(e) =>
-                    setFormData({ ...formData, valorMeta: e.target.value })
-                  }
-                  required
-                />
-              </div>
-
               {formData.tipo === "mensal" && (
                 <div className="flex items-center space-x-2">
                   <Switch
@@ -305,18 +296,6 @@ export function MetasPage() {
                   </Label>
                 </div>
               )}
-
-              <div className="space-y-2">
-                <Label htmlFor="descricao">Descrição</Label>
-                <Textarea
-                  id="descricao"
-                  value={formData.descricao}
-                  onChange={(e) =>
-                    setFormData({ ...formData, descricao: e.target.value })
-                  }
-                  placeholder="Descreva os objetivos da meta..."
-                />
-              </div>
 
               <div className="flex justify-end space-x-2 pt-4">
                 <Button
@@ -335,15 +314,29 @@ export function MetasPage() {
         </Dialog>
       </div>
 
-      {/* BARRA DE FILTRO ADICIONADA AQUI */}
       <FilterBar />
 
       <Card>
-        <CardHeader>
-          <CardTitle>Lista de Metas</CardTitle>
-          <CardDescription>
-            Gerencie todas as metas definidas para o período selecionado
-          </CardDescription>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div className="space-y-1">
+            <CardTitle>Lista de Metas</CardTitle>
+            <CardDescription>
+              Gerencie todas as metas definidas para o período selecionado
+            </CardDescription>
+          </div>
+          <Select
+            value={filterTipo}
+            onValueChange={(value) => setFilterTipo(value as any)}
+          >
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Filtrar por Tipo" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todos</SelectItem>
+              <SelectItem value="mensal">Mensal</SelectItem>
+              <SelectItem value="anual">Anual</SelectItem>
+            </SelectContent>
+          </Select>
         </CardHeader>
         <CardContent>
           <Table>
@@ -373,7 +366,7 @@ export function MetasPage() {
                     <TableCell>{meta.periodo}</TableCell>
                     <TableCell>
                       <Badge variant="outline" className="capitalize">
-                        {meta.lojaId ? "Equipe" : "Individual"}
+                        {meta.tipo}
                         {meta.recorrente ? " (R)" : ""}
                       </Badge>
                     </TableCell>
