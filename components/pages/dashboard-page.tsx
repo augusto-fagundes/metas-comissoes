@@ -39,6 +39,7 @@ import { cn } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { format } from "date-fns"; // Adicionado: importação da função 'format'
 
 const getStatusColorClass = (percentual: number) => {
   if (percentual >= 100) return "text-green-500";
@@ -138,8 +139,9 @@ const PIE_COLORS = {
 const CHART_COLORS = ["#10b981", "#3b82f6", "#f97316", "#8b5cf6", "#ef4444"];
 
 export function DashboardPage() {
-  const { getDashboardData, lojas, colaboradores } = useData();
-  const { getPeriodLabel } = usePeriodFilter();
+  const { getDashboardData, lojas, colaboradores, vendas, metas } = useData();
+  const { getPeriodLabel, selectedPeriod, filterMode, simulationDate } =
+    usePeriodFilter();
   const [lojaSelecionadaId, setLojaSelecionadaId] = useState<string>("todas");
   const [annualView, setAnnualView] = useState("geral"); // 'geral' ou 'timeline'
   const [vendedorSelecionado, setVendedorSelecionado] =
@@ -150,10 +152,18 @@ export function DashboardPage() {
   const dadosVisaoAtual = useMemo(() => {
     if (!dashboardData) return null;
 
+    const periodToFilter =
+      filterMode === "live"
+        ? format(simulationDate, "yyyy-MM")
+        : selectedPeriod;
+    const yearToFilter = periodToFilter.substring(0, 4);
+
     if (lojaSelecionadaId === "todas") {
       return {
         nomeVisao: "Visão Geral (Todas as Lojas)",
         ...dashboardData,
+        totalMetaAnual: dashboardData.totalMetaAnual,
+        totalVendidoAnual: dashboardData.totalVendidoAnual,
       };
     }
 
@@ -166,46 +176,91 @@ export function DashboardPage() {
     const colaboradoresDaLoja = colaboradores.filter(
       (c: any) => c.lojaId === idLoja
     );
+    const idsColaboradoresDaLoja = colaboradoresDaLoja.map((c) => c.id);
 
+    // Calcular métricas para a loja selecionada
+    const totalVendidoMesLoja = vendas
+      .filter(
+        (v) =>
+          idsColaboradoresDaLoja.includes(v.colaboradorId) &&
+          v.data.startsWith(periodToFilter)
+      )
+      .reduce((sum, v) => sum + v.valor, 0);
     const totalComissaoLoja = colaboradoresDaLoja.reduce(
-      (sum: number, col: any) => sum + col.comissaoMes,
+      (sum, col) =>
+        sum +
+          dashboardData.colaboradoresData.find((d) => d.id === col.id)
+            ?.comissaoMes || 0,
       0
     );
-    const totalVendidoAnoLoja = colaboradoresDaLoja.reduce(
-      (sum: number, col: any) =>
-        sum + col.metasAnuais.reduce((s: number, m: any) => s + m.vendido, 0),
-      0
-    );
-    const totalMetaAnualLoja = colaboradoresDaLoja.reduce(
-      (sum: number, col: any) =>
-        sum + col.metasAnuais.reduce((s: number, m: any) => s + m.valorMeta, 0),
-      0
-    );
+    const totalMetaMensalLoja = metas
+      .filter(
+        (m) =>
+          idsColaboradoresDaLoja.includes(m.colaboradorId || 0) &&
+          m.periodo === periodToFilter
+      )
+      .reduce((sum, m) => sum + m.valorMeta, 0);
+
+    const totalVendidoAnoLoja = vendas
+      .filter(
+        (v) =>
+          idsColaboradoresDaLoja.includes(v.colaboradorId) &&
+          v.data.startsWith(yearToFilter)
+      )
+      .reduce((sum, v) => sum + v.valor, 0);
+    const totalMetaAnualLoja = metas
+      .filter(
+        (m) =>
+          idsColaboradoresDaLoja.includes(m.colaboradorId || 0) &&
+          m.periodo === yearToFilter &&
+          m.tipo === "anual"
+      )
+      .reduce((sum, m) => sum + m.valorMeta, 0);
 
     return {
       nomeVisao: `Desempenho: ${dadosEquipe.loja.nome}`,
-      totalMetaMensal: dadosEquipe.metaMensal?.valorMeta || 0,
-      totalVendido: dadosEquipe.totalVendidoMes,
-      percentualGeralMensal: dadosEquipe.metaMensal?.percentual || 0,
+      totalMetaMensal: totalMetaMensalLoja,
+      totalVendido: totalVendidoMesLoja,
+      percentualGeralMensal:
+        totalMetaMensalLoja > 0
+          ? Math.round((totalVendidoMesLoja / totalMetaMensalLoja) * 100)
+          : 0,
       totalComissao: totalComissaoLoja,
-      colaboradoresData: colaboradoresDaLoja.map((c) => {
-        const dashboardCol = dashboardData.colaboradoresData.find(
-          (d: any) => d.id === c.id
-        );
-        return dashboardCol || c;
-      }),
+      colaboradoresData: dashboardData.colaboradoresData.filter((d) =>
+        idsColaboradoresDaLoja.includes(d.id)
+      ),
       performancePeriodoSelecionado:
-        dashboardData.performancePeriodoSelecionado.filter((p: any) =>
-          colaboradoresDaLoja.some((c: any) => c.nome.startsWith(p.name))
+        dashboardData.performancePeriodoSelecionado.filter((p) =>
+          colaboradoresDaLoja.some((c) => c.nome.startsWith(p.name))
         ),
       totalVendidoAnual: totalVendidoAnoLoja,
       totalMetaAnual: totalMetaAnualLoja,
-      performanceAnual: dashboardData.performanceAnual.filter((p: any) =>
-        colaboradoresDaLoja.some((c: any) => c.nome.startsWith(p.name))
+      performanceAnual: dashboardData.performanceAnual.filter((p) =>
+        colaboradoresDaLoja.some((c) => c.nome.startsWith(p.name))
       ),
-      performanceMensalNoAno: dashboardData.performanceMensalNoAno,
+      performanceMensalNoAno: dashboardData.performanceMensalNoAno
+        .map((mes) => {
+          const novoMes: any = { name: mes.name };
+          colaboradoresDaLoja.forEach((col) => {
+            const nomeCurto = col.nome.split(" ")[0];
+            if (mes[nomeCurto]) {
+              novoMes[nomeCurto] = mes[nomeCurto];
+            }
+          });
+          return novoMes;
+        })
+        .filter((mes) => Object.keys(mes).length > 1), // Filtra meses sem dados
     };
-  }, [dashboardData, lojaSelecionadaId, colaboradores]);
+  }, [
+    dashboardData,
+    lojaSelecionadaId,
+    colaboradores,
+    vendas,
+    metas,
+    filterMode,
+    selectedPeriod,
+    simulationDate,
+  ]);
 
   // Lógica para filtrar o gráfico de timeline anual por vendedor
   const performanceMensalAnualFiltrada = useMemo(() => {
@@ -508,7 +563,7 @@ export function DashboardPage() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  {isMetaAnualDefined
+                  {totalMetaAnual > 0
                     ? `R$ ${totalMetaAnual.toLocaleString()}`
                     : "N/A"}
                 </div>

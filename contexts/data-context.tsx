@@ -1,3 +1,4 @@
+// Localização: metas-comissoes/contexts/data-context.tsx
 "use client";
 
 import {
@@ -277,7 +278,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   };
   const updateUsuario = (usuarioAtualizado: Usuario) =>
     setUsuarios((prev) =>
-      prev.map((u) => (u.id === usuarioAtualizado.id ? usuarioAtualizado : u))
+      prev.map((u) => (u.id === usuarioAtualizado.id ? usuarioAtualizada : u))
     );
   const deleteUsuario = (id: number) =>
     setUsuarios((prev) => prev.filter((u) => u.id !== id));
@@ -507,12 +508,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
         ? Math.round((totalVendido / totalMetaMensal) * 100)
         : 0;
 
-    // CORREÇÃO: Calcular o total vendido do ano diretamente das vendas.
     const totalVendidoAnual = vendas
       .filter((v) => v.data.startsWith(yearToFilter))
       .reduce((sum, v) => sum + v.valor, 0);
 
-    // Manter o cálculo de meta anual como estava, dependente das metas.
     const totalMetaAnual = metas
       .filter((m) => m.periodo === yearToFilter && m.tipo === "anual")
       .reduce((sum, m) => sum + m.valorMeta, 0);
@@ -666,8 +665,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const fecharMes = useCallback(
     (novosValoresMetas?: { [metaId: number]: number }) => {
       const previousMonthPeriod = getPreviousMonthPeriod();
+      // Garante que não haverá problemas de fuso horário ao adicionar um mês
+      const previousMonthDate = new Date(`${previousMonthPeriod}-01T12:00:00`);
       const nextMonthPeriod = format(
-        addMonths(new Date(`${previousMonthPeriod}-01`), 1),
+        addMonths(previousMonthDate, 1),
         "yyyy-MM"
       );
 
@@ -686,6 +687,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       const colaboradoresComVendas = colaboradores.filter((col) =>
         vendasDoPeriodo.some((v) => v.colaboradorId === col.id)
       );
+
       let ultimoIdComissao =
         comissoes.length > 0 ? Math.max(...comissoes.map((c) => c.id)) : 0;
 
@@ -726,33 +728,51 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      const metasAtualizadas = [...metas];
-      metas.forEach((meta) => {
-        if (
+      // --- Lógica de Replicação de Metas Corrigida ---
+      let ultimoIdMeta =
+        metas.length > 0 ? Math.max(...metas.map((m) => m.id)) : 0;
+
+      const metasRecorrentesDoPeriodo = metas.filter(
+        (meta) =>
           meta.periodo === previousMonthPeriod &&
           meta.recorrente &&
           meta.tipo === "mensal"
-        ) {
-          const novoValor = novosValoresMetas?.[meta.id] ?? meta.valorMeta;
-          const novaMeta: Meta = {
-            ...meta,
-            id: metas.length > 0 ? Math.max(...metas.map((m) => m.id)) + 1 : 1,
-            periodo: nextMonthPeriod,
-            valorMeta: novoValor,
-            status: "ativa",
-          };
-          metasAtualizadas.push(novaMeta);
-        }
+      );
+
+      const novasMetasReplicadas = metasRecorrentesDoPeriodo.map((meta) => {
+        const novoValor = novosValoresMetas?.[meta.id] ?? meta.valorMeta;
+        ultimoIdMeta++;
+        return {
+          ...meta,
+          id: ultimoIdMeta,
+          periodo: nextMonthPeriod, // <<< AQUI ESTÁ A CORREÇÃO PRINCIPAL
+          valorMeta: novoValor,
+          status: "ativa" as const,
+        };
       });
+
+      const metasComStatusAtualizado = metas.map((meta) => {
+        // Marca a meta recorrente antiga como 'concluida'
+        if (metasRecorrentesDoPeriodo.some((m) => m.id === meta.id)) {
+          return { ...meta, status: "concluida" as const };
+        }
+        return meta;
+      });
+
+      const metasAtualizadas = [
+        ...metasComStatusAtualizado,
+        ...novasMetasReplicadas,
+      ];
+
       return { novasComissoes, metasAtualizadas };
     },
     [
-      metas,
-      vendas,
-      colaboradores,
-      formasPagamento,
-      comissoes,
       getPreviousMonthPeriod,
+      vendas,
+      formasPagamento,
+      colaboradores,
+      comissoes,
+      metas,
     ]
   );
 

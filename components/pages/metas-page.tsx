@@ -62,6 +62,7 @@ export function MetasPage() {
     targetId: "",
     periodo: "",
     valorMeta: "",
+    descricao: "",
     tipo: "mensal" as "mensal" | "anual",
     recorrente: false,
   });
@@ -87,6 +88,7 @@ export function MetasPage() {
       targetId: "",
       periodo: defaultPeriod,
       valorMeta: "",
+      descricao: "",
       tipo: "mensal",
       recorrente: false,
     });
@@ -102,7 +104,7 @@ export function MetasPage() {
       lojaId: targetType === "equipe" ? Number(formData.targetId) : undefined,
       periodo: formData.periodo,
       valorMeta: Number.parseFloat(formData.valorMeta),
-      descricao: "Meta de Vendas",
+      descricao: formData.descricao,
       tipo: formData.tipo,
       recorrente: formData.tipo === "mensal" ? formData.recorrente : false,
     };
@@ -127,6 +129,7 @@ export function MetasPage() {
       targetId: (isEquipe ? meta.lojaId : meta.colaboradorId)?.toString() ?? "",
       periodo: meta.periodo,
       valorMeta: meta.valorMeta.toString(),
+      descricao: meta.descricao,
       tipo: meta.tipo,
       recorrente: meta.recorrente,
     });
@@ -282,6 +285,21 @@ export function MetasPage() {
                 </div>
               </div>
 
+              {/* Campo de valor da meta adicionado */}
+              <div className="space-y-2">
+                <Label htmlFor="valorMeta">Valor da Meta (R$)</Label>
+                <Input
+                  id="valorMeta"
+                  type="number"
+                  step="0.01"
+                  value={formData.valorMeta}
+                  onChange={(e) =>
+                    setFormData({ ...formData, valorMeta: e.target.value })
+                  }
+                  required
+                />
+              </div>
+
               {formData.tipo === "mensal" && (
                 <div className="flex items-center space-x-2">
                   <Switch
@@ -296,6 +314,18 @@ export function MetasPage() {
                   </Label>
                 </div>
               )}
+
+              <div className="space-y-2">
+                <Label htmlFor="descricao">Descrição</Label>
+                <Textarea
+                  id="descricao"
+                  value={formData.descricao}
+                  onChange={(e) =>
+                    setFormData({ ...formData, descricao: e.target.value })
+                  }
+                  placeholder="Descreva os objetivos da meta..."
+                />
+              </div>
 
               <div className="flex justify-end space-x-2 pt-4">
                 <Button
