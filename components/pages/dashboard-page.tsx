@@ -208,14 +208,30 @@ export function DashboardPage() {
           v.data.startsWith(yearToFilter)
       )
       .reduce((sum, v) => sum + v.valor, 0);
-    const totalMetaAnualLoja = metas
-      .filter(
-        (m) =>
-          idsColaboradoresDaLoja.includes(m.colaboradorId || 0) &&
-          m.periodo === yearToFilter &&
-          m.tipo === "anual"
-      )
-      .reduce((sum, m) => sum + m.valorMeta, 0);
+
+    // Busca a meta anual específica para a equipe (loja)
+    const metaAnualDaLoja = metas.find(
+      (m) =>
+        m.lojaId === idLoja && m.periodo === yearToFilter && m.tipo === "anual"
+    );
+    const totalMetaAnualLoja = metaAnualDaLoja?.valorMeta || 0;
+
+    // Recalcula a performance anual focando apenas nas vendas dos membros da equipe
+    const performanceAnualLoja = colaboradoresDaLoja.map((colaborador) => {
+      const totalVendidoColaborador = vendas
+        .filter(
+          (v) =>
+            v.colaboradorId === colaborador.id &&
+            v.data.startsWith(yearToFilter)
+        )
+        .reduce((sum, v) => sum + v.valor, 0);
+
+      return {
+        name: colaborador.nome.split(" ")[0],
+        meta: 0, // Definimos a meta individual como 0 para não aparecer no gráfico
+        vendido: totalVendidoColaborador,
+      };
+    });
 
     return {
       nomeVisao: `Desempenho: ${dadosEquipe.loja.nome}`,
@@ -234,12 +250,10 @@ export function DashboardPage() {
           colaboradoresDaLoja.some((c) => c.nome.startsWith(p.name))
         ),
       totalVendidoAnual: totalVendidoAnoLoja,
-      totalMetaAnual: totalMetaAnualLoja,
-      performanceAnual: dashboardData.performanceAnual.filter((p) =>
-        colaboradoresDaLoja.some((c) => c.nome.startsWith(p.name))
-      ),
+      totalMetaAnual: totalMetaAnualLoja, // Usa o valor da meta da equipe
+      performanceAnual: performanceAnualLoja, // Usa os dados de performance recalculados para a equipe
       performanceMensalNoAno: dashboardData.performanceMensalNoAno
-        .map((mes) => {
+        .map((mes: any) => {
           const novoMes: any = { name: mes.name };
           colaboradoresDaLoja.forEach((col) => {
             const nomeCurto = col.nome.split(" ")[0];
@@ -249,7 +263,7 @@ export function DashboardPage() {
           });
           return novoMes;
         })
-        .filter((mes) => Object.keys(mes).length > 1), // Filtra meses sem dados
+        .filter((mes: any) => Object.keys(mes).length > 1),
     };
   }, [
     dashboardData,
