@@ -1,3 +1,4 @@
+// components/layout/sidebar.tsx
 "use client";
 
 import { useState } from "react";
@@ -15,7 +16,8 @@ import {
   DollarSign,
   LogOut,
   Menu,
-  ChevronLeft, // Ícone adicionado aqui
+  ChevronLeft,
+  Bot, // Importe o novo ícone
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { useData } from "@/contexts/data-context";
@@ -72,6 +74,12 @@ export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
       icon: Bell,
       show: isAdmin(),
       badge: notificacoesNaoLidas > 0 ? notificacoesNaoLidas : undefined,
+    },
+    {
+      id: "configuracoes-notificacoes", // Novo item de menu
+      label: "Automações",
+      icon: Bot,
+      show: isAdmin(),
     },
     {
       id: "configuracoes",

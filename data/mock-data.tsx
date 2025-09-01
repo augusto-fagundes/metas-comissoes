@@ -93,6 +93,28 @@ export const colaboradores: Colaborador[] = [
     status: "ativo",
   },
   {
+    id: 5,
+    nome: "Augusto Fagundes",
+    email: "augusto.kersting@gmail.com",
+    telefone: "(51) 997729482",
+    cargo: "Vendedor",
+    tipo: "vendedor", // CAMPO ADICIONADO
+    lojaId: 1,
+    dataAdmissao: "2023-01-15",
+    status: "ativo",
+  },
+  {
+    id: 6,
+    nome: "Isabela Cardoso",
+    email: "isabela@gmail.com",
+    telefone: "(51) 989529131",
+    cargo: "Vendedor",
+    tipo: "vendedor", // CAMPO ADICIONADO
+    lojaId: 1,
+    dataAdmissao: "2023-01-15",
+    status: "ativo",
+  },
+  {
     id: 2,
     nome: "Maria Santos",
     email: "maria@empresa.com",
@@ -127,7 +149,28 @@ export const colaboradores: Colaborador[] = [
   },
 ];
 
-export let metas: Meta[] = [];
+export let metas: Meta[] = [
+  {
+    id: 1,
+    colaboradorId: 5,
+    periodo: "2025-09",
+    valorMeta: 1000,
+    descricao: "Meta de teste para o mês",
+    status: "ativa",
+    tipo: "mensal",
+    recorrente: true,
+  },
+  {
+    id: 2,
+    colaboradorId: 6,
+    periodo: "2025-09",
+    valorMeta: 1000,
+    descricao: "Meta de teste para o mês",
+    status: "ativa",
+    tipo: "mensal",
+    recorrente: true,
+  },
+];
 export let vendas: Venda[] = [];
 
 export const formasPagamento: FormaPagamento[] = [

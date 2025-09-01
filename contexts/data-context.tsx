@@ -28,6 +28,7 @@ import { usePeriodFilter } from "./period-filter-context";
 import { toast } from "@/hooks/use-toast";
 import { format, addMonths } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { useNotificacao } from "./notificacao-context";
 
 interface DataContextType {
   colaboradores: Colaborador[];
@@ -113,6 +114,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     filterMode,
     simulationDate,
   } = usePeriodFilter();
+
+  const { checkAndSendMetaNotification } = useNotificacao();
 
   const addColaborador = (
     colaborador: Omit<Colaborador, "id" | "dataAdmissao" | "status">,
@@ -229,17 +232,37 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const addVenda = (venda: Omit<Venda, "id">) => {
     const novoId =
       vendas.length > 0 ? Math.max(...vendas.map((v) => v.id)) + 1 : 1;
-    setVendas((prev) => [...prev, { ...venda, id: novoId }]);
+    const novaVenda = { ...venda, id: novoId };
+    const novasVendas = [...vendas, novaVenda];
+    setVendas(novasVendas);
+    // Adicione "colaboradores" no final da chamada
+    checkAndSendMetaNotification(
+      venda.colaboradorId,
+      novasVendas,
+      metas,
+      colaboradores
+    );
   };
+
   const addVendasBatch = (novasVendas: Omit<Venda, "id">[]) => {
-    setVendas((prevVendas) => {
-      let ultimoId =
-        prevVendas.length > 0 ? Math.max(...prevVendas.map((v) => v.id)) : 0;
-      const vendasComId = novasVendas.map((venda) => ({
-        ...venda,
-        id: ++ultimoId,
-      }));
-      return [...prevVendas, ...vendasComId];
+    let ultimoId = vendas.length > 0 ? Math.max(...vendas.map((v) => v.id)) : 0;
+    const vendasComId = novasVendas.map((venda) => ({
+      ...venda,
+      id: ++ultimoId,
+    }));
+    const todasAsVendas = [...vendas, ...vendasComId];
+    setVendas(todasAsVendas);
+    const colaboradoresAfetados = new Set(
+      vendasComId.map((v) => v.colaboradorId)
+    );
+    colaboradoresAfetados.forEach((colaboradorId) => {
+      // Adicione "colaboradores" no final da chamada
+      checkAndSendMetaNotification(
+        colaboradorId,
+        todasAsVendas,
+        metas,
+        colaboradores
+      );
     });
   };
   const updateVenda = (vendaAtualizada: Venda) =>
@@ -355,50 +378,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
       }))
       .filter((item) => item.value > 0);
 
-    const performancePeriodoSelecionado = colaboradores
-      .filter((c) => c.tipo === "vendedor")
-      .map((colaborador) => {
-        const totalVendido = vendas
-          .filter(
-            (v) =>
-              v.colaboradorId === colaborador.id &&
-              v.data.startsWith(periodToFilter)
-          )
-          .reduce((sum, v) => sum + v.valor, 0);
-
-        if (totalVendido === 0) {
-          return null;
-        }
-
-        const metaColaborador = metas.find(
-          (m) =>
-            m.colaboradorId === colaborador.id &&
-            m.periodo === periodToFilter &&
-            m.tipo === "mensal"
-        );
-
-        return {
-          name: colaborador.nome.split(" ")[0],
-          meta: metaColaborador?.valorMeta || 0,
-          vendido: totalVendido,
-        };
-      })
-      .filter((item): item is NonNullable<typeof item> => item !== null);
-
     const colaboradoresData = colaboradores
       .filter((c) => c.status === "ativo" && c.tipo === "vendedor")
       .map((colaborador) => {
         const metasMensais = metas.filter(
           (m) =>
             m.colaboradorId === colaborador.id &&
-            m.status === "ativa" &&
+            (m.status === "ativa" || m.status === "concluida") && // <-- CORREÇÃO APLICADA AQUI
             m.tipo === "mensal" &&
             m.periodo === periodToFilter
         );
         const metasAnuais = metas.filter(
           (m) =>
             m.colaboradorId === colaborador.id &&
-            m.status === "ativa" &&
+            (m.status === "ativa" || m.status === "concluida") && // <-- CORREÇÃO APLICADA AQUI
             m.tipo === "anual" &&
             m.periodo === yearToFilter
         );
@@ -450,11 +443,42 @@ export function DataProvider({ children }: { children: ReactNode }) {
         };
       });
 
+    const performancePeriodoSelecionado = colaboradores
+      .filter((c) => c.tipo === "vendedor")
+      .map((colaborador) => {
+        const totalVendido = vendas
+          .filter(
+            (v) =>
+              v.colaboradorId === colaborador.id &&
+              v.data.startsWith(periodToFilter)
+          )
+          .reduce((sum, v) => sum + v.valor, 0);
+
+        if (totalVendido === 0) {
+          return null;
+        }
+
+        const metaColaborador = metas.find(
+          (m) =>
+            m.colaboradorId === colaborador.id &&
+            m.periodo === periodToFilter &&
+            (m.status === "ativa" || m.status === "concluida") && // <-- CORREÇÃO APLICADA AQUI
+            m.tipo === "mensal"
+        );
+
+        return {
+          name: colaborador.nome.split(" ")[0],
+          meta: metaColaborador?.valorMeta || 0,
+          vendido: totalVendido,
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null);
+
     const desempenhoPorEquipe = lojas.map((loja) => {
       const metasEquipe = metas.filter(
         (m) =>
           m.lojaId === loja.id &&
-          m.status === "ativa" &&
+          (m.status === "ativa" || m.status === "concluida") && // <-- CORREÇÃO APLICADA AQUI
           m.periodo.startsWith(yearToFilter)
       );
       const colaboradoresDaLoja = colaboradores.filter(
@@ -513,7 +537,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
       .reduce((sum, v) => sum + v.valor, 0);
 
     const totalMetaAnual = metas
-      .filter((m) => m.periodo === yearToFilter && m.tipo === "anual")
+      .filter(
+        (m) =>
+          m.periodo === yearToFilter &&
+          m.tipo === "anual" &&
+          (m.status === "ativa" || m.status === "concluida") // <-- CORREÇÃO APLICADA AQUI
+      )
       .reduce((sum, m) => sum + m.valorMeta, 0);
 
     const performanceAnual = colaboradores
@@ -531,6 +560,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           (m) =>
             m.colaboradorId === colaborador.id &&
             m.periodo === yearToFilter &&
+            (m.status === "ativa" || m.status === "concluida") && // <-- CORREÇÃO APLICADA AQUI
             m.tipo === "anual"
         );
 
@@ -568,6 +598,25 @@ export function DataProvider({ children }: { children: ReactNode }) {
       }
     });
 
+    const colaboradoresAtivos = colaboradores.filter(
+      (c) => c.status === "ativo" && c.tipo === "vendedor"
+    ).length;
+
+    const colaboradoresAcimaMeta = colaboradoresData.filter((col) =>
+      col.metasMensais.some((meta) => meta.percentual >= 100)
+    ).length;
+
+    const colaboradoresAbaixo80 = colaboradoresData.filter((col) =>
+      col.metasMensais.some((meta) => meta.percentual < 80)
+    ).length;
+
+    const ticketMedio =
+      filteredVendas.length > 0 ? totalVendido / filteredVendas.length : 0;
+
+    const metasAtivas = metas.filter(
+      (m) => m.status === "ativa" && isDateInPeriod(m.periodo)
+    ).length;
+
     return {
       colaboradoresData,
       totalMetaMensal,
@@ -583,6 +632,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
       totalVendidoAnual,
       performanceAnual,
       performanceMensalNoAno,
+      colaboradoresAtivos,
+      colaboradoresAcimaMeta,
+      colaboradoresAbaixo80,
+      ticketMedio,
+      metasAtivas,
     };
   }, [
     vendas,
