@@ -258,7 +258,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
       vendasComId.map((v) => v.colaboradorId)
     );
     colaboradoresAfetados.forEach((colaboradorId) => {
-      // Passa o array de vendas ATUAL e o ANTERIOR para a função
       checkAndSendMetaNotification(
         colaboradorId,
         todasAsVendas,

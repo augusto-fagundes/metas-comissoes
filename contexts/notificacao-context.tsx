@@ -6,12 +6,17 @@ import { toast } from "@/hooks/use-toast";
 import { usePeriodFilter } from "./period-filter-context";
 import { Colaborador, Meta, Venda } from "@/data/mock-data";
 
+// Nova interface para um único gatilho
+export interface GatilhoMeta {
+  id: number;
+  ativo: boolean;
+  percentual: number;
+  mensagem: string;
+}
+
 interface NotificacaoConfig {
-  gatilhoMeta: {
-    ativo: boolean;
-    percentual: number;
-    mensagem: string;
-  };
+  // Alterado para um array de gatilhos
+  gatilhosMeta: GatilhoMeta[];
   gatilhoData: {
     ativo: boolean;
     diasAntes: number;
@@ -41,12 +46,19 @@ const WEBHOOK_URL = "https://mvbk7zvx-n8n.cloudfy.cloud/webhook-test/teste";
 export function NotificacaoProvider({ children }: { children: ReactNode }) {
   const { isDateInPeriod } = usePeriodFilter();
 
+  // Estado para rastrear notificações já enviadas (evita repetição)
+  const [sentNotifications, setSentNotifications] = useState<string[]>([]);
+
   const [config, setConfig] = useState<NotificacaoConfig>({
-    gatilhoMeta: {
-      ativo: true,
-      percentual: 75,
-      mensagem: "Olá {nome}, você atingiu {percentual}% da sua meta!",
-    },
+    // Alterado para um array
+    gatilhosMeta: [
+      {
+        id: 1,
+        ativo: true,
+        percentual: 75,
+        mensagem: "Olá {nome}, você atingiu {percentual}% da sua meta!",
+      },
+    ],
     gatilhoData: {
       ativo: true,
       diasAntes: 7,
@@ -69,8 +81,6 @@ export function NotificacaoProvider({ children }: { children: ReactNode }) {
     metas: Meta[],
     colaboradores: Colaborador[]
   ) => {
-    if (!config.gatilhoMeta.ativo) return;
-
     const colaborador = colaboradores.find((c) => c.id === colaboradorId);
     if (!colaborador) return;
 
@@ -83,58 +93,64 @@ export function NotificacaoProvider({ children }: { children: ReactNode }) {
 
     if (!metaVendedor || metaVendedor.valorMeta === 0) return;
 
-    // Calcula o total vendido ANTES da nova venda
-    const vendasAnterioresVendedor = vendasAnteriores.filter(
-      (v) => v.colaboradorId === colaboradorId && isDateInPeriod(v.data)
-    );
-    const totalVendidoAntes = vendasAnterioresVendedor.reduce(
-      (acc, v) => acc + v.valor,
-      0
-    );
+    const totalVendidoAntes = vendasAnteriores
+      .filter(
+        (v) => v.colaboradorId === colaboradorId && isDateInPeriod(v.data)
+      )
+      .reduce((acc, v) => acc + v.valor, 0);
     const percentualAntes = (totalVendidoAntes / metaVendedor.valorMeta) * 100;
 
-    // Calcula o total vendido DEPOIS da nova venda
-    const vendasAtuaisVendedor = vendasAtuais.filter(
-      (v) => v.colaboradorId === colaboradorId && isDateInPeriod(v.data)
-    );
-    const totalVendidoDepois = vendasAtuaisVendedor.reduce(
-      (acc, v) => acc + v.valor,
-      0
-    );
+    const totalVendidoDepois = vendasAtuais
+      .filter(
+        (v) => v.colaboradorId === colaboradorId && isDateInPeriod(v.data)
+      )
+      .reduce((acc, v) => acc + v.valor, 0);
     const percentualDepois =
       (totalVendidoDepois / metaVendedor.valorMeta) * 100;
 
-    const limiar = config.gatilhoMeta.percentual;
+    // Itera sobre todos os gatilhos configurados
+    config.gatilhosMeta.forEach(async (gatilho) => {
+      if (!gatilho.ativo) return;
 
-    // CONDIÇÃO: A notificação só é enviada se o percentual ANTES era MENOR que o limiar
-    // E o percentual DEPOIS é MAIOR OU IGUAL ao limiar.
-    if (percentualAntes < limiar && percentualDepois >= limiar) {
-      const mensagem = config.gatilhoMeta.mensagem
-        .replace("{nome}", colaborador.nome)
-        .replace("{percentual}", Math.round(percentualDepois).toString());
+      const notificationKey = `${colaborador.id}-${metaVendedor.periodo}-${gatilho.id}`;
 
-      try {
-        await fetch(WEBHOOK_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            nome: colaborador.nome,
-            telefone: colaborador.telefone,
-            mensagem,
-          }),
-        });
-        toast({
-          title: "Notificação de Meta Atingida!",
-          description: `Webhook enviado para ${colaborador.nome}.`,
-        });
-      } catch (error) {
-        // Silencia o erro no toast para não poluir a interface do usuário
+      // Se a notificação para este gatilho já foi enviada neste período, não envia de novo
+      if (sentNotifications.includes(notificationKey)) {
+        return;
       }
-    }
+
+      const limiar = gatilho.percentual;
+
+      if (percentualAntes < limiar && percentualDepois >= limiar) {
+        const mensagem = gatilho.mensagem
+          .replace("{nome}", colaborador.nome)
+          .replace("{percentual}", Math.round(percentualDepois).toString());
+
+        try {
+          await fetch(WEBHOOK_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              nome: colaborador.nome,
+              telefone: colaborador.telefone,
+              mensagem,
+            }),
+          });
+          toast({
+            title: `Notificação de ${limiar}% Atingida!`,
+            description: `Webhook enviado para ${colaborador.nome}.`,
+          });
+          // Adiciona a notificação à lista de enviadas
+          setSentNotifications((prev) => [...prev, notificationKey]);
+        } catch (error) {
+          // Erro silencioso
+        }
+      }
+    });
   };
 
   const simularEnvio = async () => {
-    // Lógica de simulação pode ser mantida
+    /* ... */
   };
 
   return (
