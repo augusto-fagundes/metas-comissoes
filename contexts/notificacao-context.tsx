@@ -1,9 +1,8 @@
-// contexts/notificacao-context.tsx - CÓDIGO CORRIGIDO
+// Localização: metas-comissoes/contexts/notificacao-context.tsx
 "use client";
 
 import { createContext, useContext, useState, type ReactNode } from "react";
 import { toast } from "@/hooks/use-toast";
-// REMOVEMOS o import do useData daqui
 import { usePeriodFilter } from "./period-filter-context";
 import { Colaborador, Meta, Venda } from "@/data/mock-data";
 
@@ -24,10 +23,10 @@ interface NotificacaoContextType {
   config: NotificacaoConfig;
   updateConfig: (newConfig: NotificacaoConfig) => void;
   simularEnvio: () => Promise<void>;
-  // ATUALIZAMOS A "ASSINATURA" DA FUNÇÃO PARA RECEBER A LISTA DE COLABORADORES
   checkAndSendMetaNotification: (
     colaboradorId: number,
-    vendas: Venda[],
+    vendasAtuais: Venda[],
+    vendasAnteriores: Venda[],
     metas: Meta[],
     colaboradores: Colaborador[]
   ) => void;
@@ -40,7 +39,6 @@ const NotificacaoContext = createContext<NotificacaoContextType | undefined>(
 const WEBHOOK_URL = "https://mvbk7zvx-n8n.cloudfy.cloud/webhook-test/teste";
 
 export function NotificacaoProvider({ children }: { children: ReactNode }) {
-  // REMOVEMOS a chamada ao useData() daqui
   const { isDateInPeriod } = usePeriodFilter();
 
   const [config, setConfig] = useState<NotificacaoConfig>({
@@ -64,10 +62,10 @@ export function NotificacaoProvider({ children }: { children: ReactNode }) {
     });
   };
 
-  // ATUALIZAMOS A FUNÇÃO PARA USAR O PARÂMETRO "colaboradores"
   const checkAndSendMetaNotification = async (
     colaboradorId: number,
-    vendas: Venda[],
+    vendasAtuais: Venda[],
+    vendasAnteriores: Venda[],
     metas: Meta[],
     colaboradores: Colaborador[]
   ) => {
@@ -76,26 +74,44 @@ export function NotificacaoProvider({ children }: { children: ReactNode }) {
     const colaborador = colaboradores.find((c) => c.id === colaboradorId);
     if (!colaborador) return;
 
-    // ... (o restante da função continua igual)
     const metaVendedor = metas.find(
       (m) =>
         m.colaboradorId === colaboradorId &&
         isDateInPeriod(m.periodo) &&
         m.tipo === "mensal"
     );
-    if (!metaVendedor) return;
 
-    const vendasVendedor = vendas.filter(
+    if (!metaVendedor || metaVendedor.valorMeta === 0) return;
+
+    // Calcula o total vendido ANTES da nova venda
+    const vendasAnterioresVendedor = vendasAnteriores.filter(
       (v) => v.colaboradorId === colaboradorId && isDateInPeriod(v.data)
     );
+    const totalVendidoAntes = vendasAnterioresVendedor.reduce(
+      (acc, v) => acc + v.valor,
+      0
+    );
+    const percentualAntes = (totalVendidoAntes / metaVendedor.valorMeta) * 100;
 
-    const totalVendido = vendasVendedor.reduce((acc, v) => acc + v.valor, 0);
-    const percentualAtingido = (totalVendido / metaVendedor.valorMeta) * 100;
+    // Calcula o total vendido DEPOIS da nova venda
+    const vendasAtuaisVendedor = vendasAtuais.filter(
+      (v) => v.colaboradorId === colaboradorId && isDateInPeriod(v.data)
+    );
+    const totalVendidoDepois = vendasAtuaisVendedor.reduce(
+      (acc, v) => acc + v.valor,
+      0
+    );
+    const percentualDepois =
+      (totalVendidoDepois / metaVendedor.valorMeta) * 100;
 
-    if (percentualAtingido >= config.gatilhoMeta.percentual) {
+    const limiar = config.gatilhoMeta.percentual;
+
+    // CONDIÇÃO: A notificação só é enviada se o percentual ANTES era MENOR que o limiar
+    // E o percentual DEPOIS é MAIOR OU IGUAL ao limiar.
+    if (percentualAntes < limiar && percentualDepois >= limiar) {
       const mensagem = config.gatilhoMeta.mensagem
         .replace("{nome}", colaborador.nome)
-        .replace("{percentual}", Math.round(percentualAtingido).toString());
+        .replace("{percentual}", Math.round(percentualDepois).toString());
 
       try {
         await fetch(WEBHOOK_URL, {
@@ -112,15 +128,13 @@ export function NotificacaoProvider({ children }: { children: ReactNode }) {
           description: `Webhook enviado para ${colaborador.nome}.`,
         });
       } catch (error) {
-        /* O erro já é tratado na simulação, aqui podemos optar por não notificar */
+        // Silencia o erro no toast para não poluir a interface do usuário
       }
     }
   };
 
   const simularEnvio = async () => {
-    // A simulação pode continuar como está, pois ela não depende do useData
-    // Se precisasse, você teria que buscar os colaboradores de outra forma
-    // ou passar como parâmetro também.
+    // Lógica de simulação pode ser mantida
   };
 
   return (

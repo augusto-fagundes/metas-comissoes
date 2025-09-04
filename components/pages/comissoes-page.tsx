@@ -619,9 +619,10 @@ export function ComissoesPage() {
                         <TableCell>{d.formaPagamento}</TableCell>
                         <TableCell>
                           R${" "}
-                          {d.totalVendas?.toLocaleString("pt-BR", {
+                          {d.valor?.toLocaleString("pt-BR", {
+                            // <-- CORREÇÃO APLICADA AQUI
                             minimumFractionDigits: 2,
-                          })}
+                          }) ?? "N/A"}
                         </TableCell>
                         <TableCell>
                           R${" "}

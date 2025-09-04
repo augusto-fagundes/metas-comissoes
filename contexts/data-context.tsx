@@ -235,10 +235,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const novaVenda = { ...venda, id: novoId };
     const novasVendas = [...vendas, novaVenda];
     setVendas(novasVendas);
-    // Adicione "colaboradores" no final da chamada
+
+    // Passa o array de vendas ATUAL e o ANTERIOR para a função
     checkAndSendMetaNotification(
       venda.colaboradorId,
       novasVendas,
+      vendas,
       metas,
       colaboradores
     );
@@ -256,10 +258,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
       vendasComId.map((v) => v.colaboradorId)
     );
     colaboradoresAfetados.forEach((colaboradorId) => {
-      // Adicione "colaboradores" no final da chamada
+      // Passa o array de vendas ATUAL e o ANTERIOR para a função
       checkAndSendMetaNotification(
         colaboradorId,
         todasAsVendas,
+        vendas,
         metas,
         colaboradores
       );
@@ -680,7 +683,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         const comissao = totalVendas * (forma.percentualComissao / 100);
         return {
           formaPagamento: forma.nome,
-          totalVendas,
+          valor: totalVendas,
           comissao,
         };
       });
